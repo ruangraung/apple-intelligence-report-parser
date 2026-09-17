@@ -1,0 +1,41 @@
+{
+  "modelRequests": [
+    {
+      "timestamp": 1757900000.5,
+      "identifier": "11111111-1111-1111-1111-111111111111",
+      "useCase": "com.apple.SummarizationKit.mailMessage.synopsis",
+      "prompt": "PromptTemplateInfo(templateID: \"com.apple.SummarizationKit.mailMessage.synopsis\", variableBindings: [\"context\": \"\", \"doc\": \"Subject: Demo\\nBody: synthetic body\"], locale: Optional(en_US))",
+      "response": "Synthetic summary of the demo message.",
+      "model": "com.apple.fm.language.instruct_on_device_v1.text_summarizer",
+      "modelVersion": "1.0.0",
+      "clientIdentifier": "com.apple.mobilemail",
+      "executionEnvironment": "OnDevice"
+    },
+    {
+      "timestamp": 1757900100.0,
+      "identifier": "22222222-2222-2222-2222-222222222222",
+      "useCase": "GenerativeAssistant.knowledge",
+      "prompt": "What is the airspeed velocity of an unladen swallow?",
+      "response": "Roughly 11 m/s for a European swallow.",
+      "model": "com.apple.fm.language.instruct_server_v1.base",
+      "modelVersion": "8.0.0",
+      "clientIdentifier": "com.apple.siri",
+      "executionEnvironment": "PrivateCloudCompute"
+    }
+  ],
+  "privateCloudComputeRequests": [
+    {
+      "timestamp": 1757900100.1,
+      "requestId": "22222222-2222-2222-2222-222222222222",
+      "pipelineKind": "demo-pipeline",
+      "pipelineParameters": "{\"adapter\": \"com.apple.fm.language.instruct_server_v1.base\", \"model\": \"com.apple.fm.language.instruct_server_v1.base\"}",
+      "nodes": [
+        {
+          "node": "DEMONODE0000000000000000000000000000000000000=",
+          "nodeState": "Validated",
+          "attestationBundle": "{\"sepAttestation\":\"MIIFHTCCBKQCAQEwggJPoh8EHTYwMjItc3ludGhldGlj\"}"
+        }
+      ]
+    }
+  ]
+}

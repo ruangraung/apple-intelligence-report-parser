@@ -1,0 +1,59 @@
+NOTICE
+
+Apple Intelligence Report Parser
+Copyright (c) 2026 ruangraung
+
+This project is licensed under the MIT License (see LICENSE). This NOTICE
+covers the privacy and data-handling model of the tool; it does not modify
+the license.
+
+Data handling
+-------------
+This tool reads an Apple Intelligence Report JSON export and writes CSV,
+HTML, TXT, Markdown, and JSON files derived from it. That data includes your
+prompts and the model's responses in plain text, unless you pass --redact.
+
+Zero network calls
+-------------------
+This tool makes no network requests of any kind, at any point in its
+execution. It is a single Python 3 file using only the Python standard
+library. It reads exactly one file (the report you point it at) and writes
+to exactly one directory (the one you specify). There are no telemetry
+calls, no update checks, no analytics, and no third-party services
+involved.
+
+No subprocess, no dynamic execution
+------------------------------------
+This tool does not invoke subprocess, os.system, eval(), exec(), or any
+other mechanism to run external commands or dynamically execute code.
+
+Local processing only
+----------------------
+All parsing happens locally, in-process, on the machine you run it on.
+Nothing is uploaded, synced, or transmitted anywhere by this tool.
+
+Your responsibility
+--------------------
+Once this tool writes output files, those files are as sensitive as your
+original report: they may contain the full text of prompts you sent to
+Apple Intelligence and the responses you received. The authors are not
+responsible for what you do with parsed output after it is written.
+This includes, but is not limited to, committing it to a repository,
+uploading it to a cloud sync folder, pasting it into a chat, or sharing it
+with a third party. Use --redact if you need to share the shape of your
+usage (timestamps, apps, origin, counts) without exposing the content.
+
+No affiliation with Apple
+---------------------------
+This is an independent, community-built tool. It is not developed,
+endorsed, or supported by Apple Inc. "Apple Intelligence" and "Private
+Cloud Compute" are trademarks of Apple Inc. The report format this tool
+parses is not a stable, documented public API and may change without
+notice (see "Known limitations" in README.md).
+
+No warranty
+-----------
+This software is provided "as is", without warranty of any kind, per the
+MIT License in LICENSE. In particular, the authors make no guarantee that
+this tool correctly parses every Apple Intelligence Report you may
+encounter, on any macOS version, now or in the future.

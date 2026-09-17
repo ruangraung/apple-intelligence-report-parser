@@ -1,0 +1,8 @@
+[extend]
+  useDefault = true
+
+[allowlist]
+  description = "Allow synthetic demo fixtures and test data"
+  paths = [
+    '''examples/demo_report\.json''',
+  ]

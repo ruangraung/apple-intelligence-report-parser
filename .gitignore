@@ -1,0 +1,29 @@
+# Apple Intelligence Report files — never commit real exports
+Apple_Intelligence_Report*.json
+*_report*.json
+*.air
+# Allow the synthetic demo fixture
+!examples/demo_report.json
+
+# Parsed output — generated, never committed
+*_parsed.*
+air_parsed/
+air_demo/
+
+# Environment / secrets
+.env*
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# OS files
+.DS_Store
+Thumbs.db
