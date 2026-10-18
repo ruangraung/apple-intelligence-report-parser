@@ -17,6 +17,7 @@ import sys
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
+from datetime import datetime, timezone
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 AIR_PARSE_PATH = REPO_ROOT / "air_parse.py"
@@ -137,6 +138,73 @@ class TestF6TemplateBindings(unittest.TestCase):
             'variableBindings: [{"prompt": "' + self.BINDING_CONTENT + '"}])'
         )
         self.assertEqual(air_parse.template_prompt(text), self.BINDING_CONTENT)
+
+
+class TestF4TimezoneLabel(unittest.TestCase):
+    """F4: the printed label belongs to the records, not to the current date."""
+
+    @staticmethod
+    def _write(tmp, name, timestamps):
+        payload = {
+            "modelRequests": [
+                {
+                    "timestamp": ts,
+                    "identifier": f"id-{index}",
+                    "useCase": "summarization",
+                    "prompt": "hello",
+                    "response": "world",
+                    "model": "com.apple.fm",
+                    "modelVersion": "1.0",
+                    "clientIdentifier": "com.apple.mail",
+                    "executionEnvironment": "OnDevice",
+                }
+                for index, ts in enumerate(timestamps)
+            ]
+        }
+        path = os.path.join(tmp, name)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh)
+        return path
+
+    def _labels(self, tmp, timestamps):
+        report = self._write(tmp, "report.json", timestamps)
+        out = os.path.join(tmp, "out")
+        code, output = run_cli([report, "--out", out, "--formats", "txt,json", "--tz", "America/New_York"])
+        self.assertEqual(code, 0, output)
+        with open(os.path.join(out, "report_parsed.txt"), encoding="utf-8") as fh:
+            txt = fh.read()
+        with open(os.path.join(out, "report_parsed.json"), encoding="utf-8") as fh:
+            payload = json.load(fh)
+        header = next(line for line in txt.splitlines() if "Local timezone" in line)
+        return header, payload["local_timezone"]
+
+    def test_a_report_spanning_dst_names_both_offsets(self):
+        january = datetime(2026, 1, 15, 12, tzinfo=timezone.utc).timestamp()
+        july = datetime(2026, 7, 15, 12, tzinfo=timezone.utc).timestamp()
+        with tempfile.TemporaryDirectory() as tmp:
+            header, json_label = self._labels(tmp, [january, july])
+        for label in ("EST -05:00", "EDT -04:00"):
+            self.assertIn(label, header, header)
+            self.assertIn(label, json_label, json_label)
+
+    def test_a_winter_report_is_labelled_with_the_winter_offset(self):
+        january = datetime(2026, 1, 15, 12, tzinfo=timezone.utc).timestamp()
+        with tempfile.TemporaryDirectory() as tmp:
+            header, json_label = self._labels(tmp, [january])
+        self.assertIn("EST -05:00", header, header)
+        self.assertIn("EST -05:00", json_label, json_label)
+        self.assertNotIn("EDT", header, header)
+
+    def test_a_fixed_offset_label_is_unchanged(self):
+        ts = datetime(2026, 1, 15, 12, tzinfo=timezone.utc).timestamp()
+        with tempfile.TemporaryDirectory() as tmp:
+            report = self._write(tmp, "report.json", [ts])
+            out = os.path.join(tmp, "out")
+            code, output = run_cli([report, "--out", out, "--formats", "txt", "--tz", "+7"])
+            self.assertEqual(code, 0, output)
+            with open(os.path.join(out, "report_parsed.txt"), encoding="utf-8") as fh:
+                header = next(line for line in fh if "Local timezone" in line)
+        self.assertIn("UTC+7", header)
 
 
 class TestF5MaxContent(unittest.TestCase):
