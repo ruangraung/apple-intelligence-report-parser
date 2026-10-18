@@ -71,21 +71,53 @@ wget https://raw.githubusercontent.com/ruangraung/apple-intelligence-report-pars
 
 That's it. No `pip install`, no virtual environment, no dependencies. Just run it with `python3`.
 
-## Quick start
+## First run, step by step
 
-Try it first on a synthetic report. It touches nothing of yours and is safe to run immediately:
+### 1. Turn the report on
 
-    python3 air_parse.py --demo --out air_demo
+Open **System Settings**, then **Privacy & Security**, then **Apple Intelligence Report**. Set the recording window to 15 minutes or 7 days.
 
-That writes five files into `air_demo/`. Open the HTML one in your browser:
+The window is how far back the export reaches. If you have just turned the report on, use Siri, Writing Tools, or Photos Memories once before exporting, or the report will be almost empty.
 
-    open air_demo/demo_report_parsed.html
+### 2. Export it
 
-Parse your own export:
+Click **Export Activity**. macOS asks for your Mac password, which is expected, then opens a save dialog holding `Apple_Intelligence_Report.json`. Save it to Downloads.
 
-    python3 air_parse.py Apple_Intelligence_Report.json --out air_parsed
+### 3. Open Terminal in the folder you cloned
 
-Output files are named after the input, so `Apple_Intelligence_Report.json` gives you:
+```sh
+cd ~/apple-intelligence-report-parser
+```
+
+### 4. Parse it
+
+```sh
+python3 air_parse.py ~/Downloads/Apple_Intelligence_Report.json --formats html
+```
+
+That creates `air_parsed/` and writes one file into it. Open that file in your browser:
+
+```sh
+open air_parsed/Apple_Intelligence_Report_parsed.html
+```
+
+The page has a filter box, sortable headings, page navigation, and rows you can click to see the full request and response.
+
+### 5. Choose the formats
+
+| What you want | Add |
+|---|---|
+| The page you can filter and sort | `--formats html` |
+| All five formats | nothing, that is the default |
+| A copy that is safe to share | `--redact`, for example `--redact --out air_redacted` |
+
+Every format in one run:
+
+```sh
+python3 air_parse.py ~/Downloads/Apple_Intelligence_Report.json --out air_parsed
+```
+
+Output files are named after the input, so the run above gives you:
 
     air_parsed/Apple_Intelligence_Report_parsed.html   <- open this in a browser
     air_parsed/Apple_Intelligence_Report_parsed.csv    <- open in Numbers or Excel
@@ -94,6 +126,33 @@ Output files are named after the input, so `Apple_Intelligence_Report.json` give
     air_parsed/Apple_Intelligence_Report_parsed.txt
 
 The output directory is created if it does not already exist.
+
+### Try it before using your own report
+
+`--demo` writes a synthetic report and parses it. It touches nothing of yours, so it is safe to run first:
+
+```sh
+python3 air_parse.py --demo --out air_demo
+open air_demo/demo_report_parsed.html
+```
+
+### Where to keep the file and the output
+
+The tool takes a path, so the export can stay in Downloads. Two places to keep it out of:
+
+- **Inside the cloned repository.** The repository is public. `.gitignore` covers the export filename, but a report kept there is one `git add -f` away from being published.
+- **Desktop or Documents.** On most Macs these sync to iCloud, which would upload every prompt and reply. Downloads is not synced, and the output directory should stay outside sync too.
+
+If the path is awkward to type, drag the file from Finder into the Terminal window. macOS inserts the full path for you.
+
+### If something goes wrong
+
+| Message | What it means | What to do |
+|---|---|---|
+| `input error: ... is not a regular file` | the path does not point at the export | drag the file into Terminal instead of typing it |
+| `zsh: command not found: python3` | Python is not installed yet | run `xcode-select --install`, then try again |
+| `already exists; pass --force to overwrite` (exit 2) | a previous run wrote those files | add `--force`, or point `--out` somewhere new |
+| the run finishes but the report has 0 records | recording was off when you used Siri | turn it on, use Siri, then export again |
 
 ## Usage
 
