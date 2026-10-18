@@ -1064,8 +1064,8 @@ tr.detail-row td {{
       <option value="PrivateCloudCompute">private cloud</option>
       <option value="Unknown">unknown</option>
     </select>
-    <button type="button" id="expandAll">Expand all</button>
-    <button type="button" id="collapseAll">Collapse all</button>
+    <button type="button" id="expandPage">Expand page</button>
+    <button type="button" id="collapsePage">Collapse page</button>
     <span class="count" id="count"></span>
   </div>
   <div class="table-scroll">
@@ -1089,8 +1089,8 @@ const count = document.getElementById('count');
 const pageInfo = document.getElementById('pageInfo');
 const prevBtn = document.getElementById('prevPage');
 const nextBtn = document.getElementById('nextPage');
-const expandAllBtn = document.getElementById('expandAll');
-const collapseAllBtn = document.getElementById('collapseAll');
+const expandPageBtn = document.getElementById('expandPage');
+const collapsePageBtn = document.getElementById('collapsePage');
 
 let filteredRows = dataRows.slice();
 let currentPage = 1;
@@ -1144,8 +1144,10 @@ if (search) search.addEventListener('input', applyFilters);
 if (originSelect) originSelect.addEventListener('change', applyFilters);
 if (prevBtn) prevBtn.addEventListener('click', () => {{ currentPage -= 1; render(); }});
 if (nextBtn) nextBtn.addEventListener('click', () => {{ currentPage += 1; render(); }});
-if (expandAllBtn) expandAllBtn.addEventListener('click', () => {{ currentPageRows().forEach(row => setExpanded(row, true)); }});
-if (collapseAllBtn) collapseAllBtn.addEventListener('click', () => {{ currentPageRows().forEach(row => setExpanded(row, false)); }});
+// Deliberately limited to the rows on screen: render() collapses rows that leave
+// the page, and a detail row whose own row is hidden would render as unanchored text.
+if (expandPageBtn) expandPageBtn.addEventListener('click', () => {{ currentPageRows().forEach(row => setExpanded(row, true)); }});
+if (collapsePageBtn) collapsePageBtn.addEventListener('click', () => {{ currentPageRows().forEach(row => setExpanded(row, false)); }});
 
 dataRows.forEach(row => {{
   row.addEventListener('click', () => {{

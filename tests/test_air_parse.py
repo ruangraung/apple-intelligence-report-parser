@@ -377,6 +377,48 @@ class TestF8BreakdownBar(unittest.TestCase):
         self.assertNotIn('class="breakdown-labels"', page)
 
 
+class TestF9ExpandScope(unittest.TestCase):
+    """F9: the expand controls are page-scoped, so their labels say so."""
+
+    @staticmethod
+    def _page(tmp, count):
+        records = [
+            {
+                "timestamp": 1757900000.0 + index * 60,
+                "identifier": f"id-{index}",
+                "useCase": "summarization",
+                "prompt": "hello",
+                "response": "world",
+                "model": "com.apple.fm",
+                "modelVersion": "1.0",
+                "clientIdentifier": "com.apple.mail",
+                "executionEnvironment": "OnDevice",
+            }
+            for index in range(count)
+        ]
+        report = os.path.join(tmp, "report.json")
+        with open(report, "w", encoding="utf-8") as fh:
+            json.dump({"modelRequests": records}, fh)
+        out = os.path.join(tmp, "out")
+        code, output = run_cli([report, "--out", out, "--formats", "html", "--tz", "utc"])
+        assert code == 0, output
+        with open(os.path.join(out, "report_parsed.html"), encoding="utf-8") as fh:
+            return fh.read()
+
+    def test_the_buttons_promise_only_the_visible_page(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            page = self._page(tmp, 60)
+        self.assertIn(">Expand page<", page)
+        self.assertIn(">Collapse page<", page)
+        self.assertNotIn(">Expand all<", page)
+        self.assertNotIn(">Collapse all<", page)
+
+    def test_the_handler_still_targets_the_current_page(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            page = self._page(tmp, 60)
+        self.assertIn("currentPageRows().forEach", page)
+
+
 class TestWriters(unittest.TestCase):
     """Every format lands, is non-empty, and is self-consistent."""
 
