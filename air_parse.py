@@ -200,21 +200,29 @@ def classify_origin(raw):
 
 
 def user_trigger(*candidates):
+    """Map a use case to a friendly label.
+
+    Identifiers arrive in mixed case (com.apple.SummarizationKit.mailMessage.synopsis)
+    while the table holds both camelCase and snake_case keys, so both sides are
+    folded to lower case before the substring test.
+    """
     for candidate in candidates:
-        text = as_text(candidate)
+        text = as_text(candidate).lower()
         for key, label in USE_CASE_TRIGGERS.items():
-            if key in text:
+            if key.lower() in text:
                 return label
     for candidate in candidates:
         text = as_text(candidate)
-        if "VisualGeneration" in text:
+        lowered = text.lower()
+        if "visualgeneration" in lowered:
             return "Image Generation"
-        if "GenerativeAssistant" in text:
+        if "generativeassistant" in lowered:
             return "Assistant"
         template = re.search(r'templateID:\s*"([^"]+)"', text)
         if template:
+            template_id = template.group(1).lower()
             for key, label in USE_CASE_TRIGGERS.items():
-                if key in template.group(1):
+                if key.lower() in template_id:
                     return label
     for candidate in candidates:
         text = as_text(candidate)
