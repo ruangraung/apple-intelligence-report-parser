@@ -250,6 +250,68 @@ class TestF5MaxContent(unittest.TestCase):
             self.assertEqual(capped, f"{full[:4]}... [+{len(full) - 4} chars]")
 
 
+class TestF7CsvGuardScope(unittest.TestCase):
+    """F7: every value the report controls is guarded, not just request/response."""
+
+    HOSTILE = {
+        "identifier": "@cmd",
+        "useCase": "=SUM(1+1)",
+        "prompt": "=1+1",
+        "response": "@SUM(2)",
+        "model": "-cmd|' /C calc'!A1",
+        "clientIdentifier": '=HYPERLINK("http://example.invalid")',
+        "executionEnvironment": "OnDevice",
+        "timestamp": 1757900000.0,
+    }
+
+    @staticmethod
+    def _cells(tmp, guard=True):
+        report = os.path.join(tmp, "report.json")
+        with open(report, "w", encoding="utf-8") as fh:
+            json.dump({"modelRequests": [dict(TestF7CsvGuardScope.HOSTILE)]}, fh)
+        out = os.path.join(tmp, "out")
+        args = [report, "--out", out, "--formats", "csv", "--tz", "utc"]
+        if not guard:
+            args.append("--no-csv-guard")
+        code, output = run_cli(args)
+        assert code == 0, output
+        with open(os.path.join(out, "report_parsed.csv"), encoding="utf-8") as fh:
+            rows = list(__import__("csv").reader(fh))
+        return dict(zip(rows[0], rows[1]))
+
+    def test_report_controlled_columns_carry_the_guard(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cells = self._cells(tmp)
+        for column in ("User Trigger", "Use Case (Raw)", "Source App", "Model"):
+            self.assertTrue(cells[column].startswith("'"), f"{column} was not guarded: {cells[column]!r}")
+        self.assertTrue(cells["Request"].startswith("'"))
+        self.assertTrue(cells["Response"].startswith("'"))
+
+    def test_columns_the_tool_generates_are_left_alone(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cells = self._cells(tmp)
+        self.assertEqual(cells["Origin"], "OnDevice")
+        self.assertEqual(cells["Record Type"], "Model_Request")
+        self.assertFalse(cells["Timestamp (UTC)"].startswith("'"))
+
+    def test_no_csv_guard_leaves_every_value_raw(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cells = self._cells(tmp, guard=False)
+        self.assertEqual(cells["Use Case (Raw)"], "=SUM(1+1)")
+        self.assertEqual(cells["Request"], "=1+1")
+
+    def test_leading_whitespace_does_not_bypass_the_guard(self):
+        for value in (" =SUM(1)", "   +1", "\t@cmd", " \r-2"):
+            self.assertTrue(
+                air_parse.csv_guard(value, True).startswith("'"),
+                f"leading whitespace bypassed the guard for {value!r}",
+            )
+
+    def test_ordinary_values_are_untouched(self):
+        for value in ("Summarize", "com.apple.mail", "2026-01-15 07:00:00", ""):
+            self.assertEqual(air_parse.csv_guard(value, True), value)
+
+
 class TestWriters(unittest.TestCase):
     """Every format lands, is non-empty, and is self-consistent."""
 

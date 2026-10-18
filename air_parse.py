@@ -210,7 +210,8 @@ def csv_guard(value, enabled):
     """Neutralise leading characters that spreadsheet apps execute as formulas."""
     if not enabled or not value:
         return value
-    if value[0] in ("=", "+", "-", "@", "\t", "\r"):
+    leading = value.lstrip()
+    if leading and leading[0] in ("=", "+", "-", "@", "\t", "\r"):
         return "'" + value
     return value
 
@@ -462,6 +463,8 @@ def parse_report(data, tz, max_content, redact):
 
 
 def write_csv(records, path, guard):
+    # Every column whose text comes from the report is guarded, not only the two
+    # long free-text ones: a use case or a model name can also start a formula.
     with open(path, "w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle, quoting=csv.QUOTE_ALL)
         writer.writerow(CSV_COLUMNS)
@@ -471,12 +474,12 @@ def write_csv(records, path, guard):
                     record["timestamp_utc"],
                     record["timestamp_local"],
                     record["origin"],
-                    record["user_trigger"],
-                    record["use_case"],
-                    record["source_app"],
+                    csv_guard(record["user_trigger"], guard),
+                    csv_guard(record["use_case"], guard),
+                    csv_guard(record["source_app"], guard),
                     csv_guard(record["request"], guard),
                     csv_guard(record["response"], guard),
-                    record["model"],
+                    csv_guard(record["model"], guard),
                     record["record_type"],
                 ]
             )
