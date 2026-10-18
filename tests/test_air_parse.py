@@ -13,6 +13,7 @@ import io
 import json
 import os
 import pathlib
+import re
 import sys
 import tempfile
 import unittest
@@ -310,6 +311,70 @@ class TestF7CsvGuardScope(unittest.TestCase):
     def test_ordinary_values_are_untouched(self):
         for value in ("Summarize", "com.apple.mail", "2026-01-15 07:00:00", ""):
             self.assertEqual(air_parse.csv_guard(value, True), value)
+
+
+class TestF8BreakdownBar(unittest.TestCase):
+    """F8: the bar accounts for every record and does not round its segments."""
+
+    @staticmethod
+    def _html(tmp, records):
+        report = os.path.join(tmp, "report.json")
+        with open(report, "w", encoding="utf-8") as fh:
+            json.dump({"modelRequests": records}, fh)
+        out = os.path.join(tmp, "out")
+        code, output = run_cli([report, "--out", out, "--formats", "html", "--tz", "utc"])
+        assert code == 0, output
+        with open(os.path.join(out, "report_parsed.html"), encoding="utf-8") as fh:
+            return fh.read()
+
+    @staticmethod
+    def _entry(index, environment):
+        return {
+            "timestamp": 1757900000.0 + index * 60,
+            "identifier": f"id-{index}",
+            "useCase": "summarization",
+            "prompt": "hello",
+            "response": "world",
+            "model": "com.apple.fm",
+            "modelVersion": "1.0",
+            "clientIdentifier": "com.apple.mail",
+            "executionEnvironment": environment,
+        }
+
+    def test_an_unknown_record_gets_its_own_segment_and_label(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            page = self._html(tmp, [
+                self._entry(0, "OnDevice"),
+                self._entry(1, "PrivateCloudCompute"),
+                self._entry(2, "SomethingElse"),
+            ])
+        for segment in ("on-device", "cloud", "unknown"):
+            self.assertRegex(
+                page,
+                rf"\.breakdown-bar \.{segment} \{{[^}}]*flex: 1;",
+                f"missing a {segment} segment with an exact weight",
+            )
+        labels_html = re.search(r'<div class="breakdown-labels">(.*?)</div>\s*<', page, re.S)
+        assert labels_html is not None, "no breakdown labels block in the page"
+        labels = labels_html.group(1)
+        self.assertIn("On-device 33%", labels)
+        self.assertIn("Private cloud 33%", labels)
+        self.assertIn("Unknown 33%", labels)
+
+    def test_segment_weights_are_record_counts_not_rounded_percentages(self):
+        records = [self._entry(i, "OnDevice") for i in range(7)]
+        records += [self._entry(10 + i, "PrivateCloudCompute") for i in range(3)]
+        with tempfile.TemporaryDirectory() as tmp:
+            page = self._html(tmp, records)
+        self.assertRegex(page, r"\.breakdown-bar \.on-device \{[^}]*flex: 7;")
+        self.assertRegex(page, r"\.breakdown-bar \.cloud \{[^}]*flex: 3;")
+        self.assertNotRegex(page, r"\.breakdown-bar \.unknown \{")
+
+    def test_an_empty_report_has_no_breakdown_bar(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            page = self._html(tmp, [])
+        self.assertNotIn('class="breakdown-bar"', page)
+        self.assertNotIn('class="breakdown-labels"', page)
 
 
 class TestWriters(unittest.TestCase):

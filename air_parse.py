@@ -727,9 +727,42 @@ def write_html(records, summary, path, source_name, tz_label, generated):
         items = "".join(f"<li>{escape(w)}</li>" for w in summary["warnings"])
         warnings_html = f'  <div class="warn"><b>Warnings</b><ul>{items}</ul></div>\n'
 
-    total = summary["records"] or 1
-    on_device_pct = round(summary["on_device"] / total * 100)
-    cloud_pct = round(summary["private_cloud"] / total * 100)
+    # Segment widths come from the record counts, so the bar adds up to the whole
+    # report and needs no rounding. Unknown records get their own segment instead
+    # of vanishing from the bar while the stats row still counts them.
+    total = summary["records"]
+    on_device = summary["on_device"]
+    cloud = summary["private_cloud"]
+    unknown = summary["unknown_origin"]
+    on_device_pct = round(on_device / total * 100) if total else 0
+    cloud_pct = round(cloud / total * 100) if total else 0
+    unknown_pct = round(unknown / total * 100) if total else 0
+
+    breakdown_html = ""
+    breakdown_unknown_css = ""
+    if total:
+        unknown_segment = '<div class="unknown"></div>\n' if unknown else ""
+        unknown_label = (
+            f'    <span><span class="dot unknown"></span>Unknown {unknown_pct}%</span>\n'
+            if unknown else ""
+        )
+        breakdown_html = (
+            '  <div class="breakdown-bar">\n'
+            '    <div class="on-device"></div>\n'
+            '    <div class="cloud"></div>\n'
+            f'{unknown_segment}'
+            '  </div>\n'
+            '  <div class="breakdown-labels">\n'
+            f'    <span><span class="dot on-device"></span>On-device {on_device_pct}%</span>\n'
+            f'    <span><span class="dot cloud"></span>Private cloud {cloud_pct}%</span>\n'
+            f'{unknown_label}'
+            '  </div>\n'
+        )
+        if unknown:
+            breakdown_unknown_css = (
+                f".breakdown-bar .unknown {{ background: var(--text-tertiary); flex: {unknown}; }}\n"
+                ".breakdown-labels .dot.unknown { background: var(--text-tertiary); }\n"
+            )
 
     document = f"""<!DOCTYPE html>
 <html lang="en">
@@ -828,9 +861,9 @@ h1 span {{ font-weight: 400; color: var(--text-tertiary); font-size: 14px; margi
   margin-top: 16px;
   background: var(--border-soft);
 }}
-.breakdown-bar .on-device {{ background: #34c759; flex: {on_device_pct}; }}
-.breakdown-bar .cloud {{ background: #007aff; flex: {cloud_pct}; }}
-.breakdown-labels {{ display: flex; gap: 16px; margin-top: 8px; font-size: 12px; color: var(--text-secondary); }}
+.breakdown-bar .on-device {{ background: #34c759; flex: {on_device}; }}
+.breakdown-bar .cloud {{ background: #007aff; flex: {cloud}; }}
+{breakdown_unknown_css}.breakdown-labels {{ display: flex; gap: 16px; margin-top: 8px; font-size: 12px; color: var(--text-secondary); }}
 .breakdown-labels .dot {{ display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }}
 .breakdown-labels .dot.on-device {{ background: #34c759; }}
 .breakdown-labels .dot.cloud {{ background: #007aff; }}
@@ -1018,15 +1051,7 @@ tr.detail-row td {{
     <div class="stat">on-device<b>{summary["on_device"]}</b></div>
     <div class="stat">private cloud<b>{summary["private_cloud"]}</b></div>
   </div>
-  <div class="breakdown-bar">
-    <div class="on-device"></div>
-    <div class="cloud"></div>
-  </div>
-  <div class="breakdown-labels">
-    <span><span class="dot on-device"></span>On-device {on_device_pct}%</span>
-    <span><span class="dot cloud"></span>Private cloud {cloud_pct}%</span>
-  </div>
-{warnings_html}</div>
+{breakdown_html}{warnings_html}</div>
 <div class="panel">
   <h2>Requests</h2>
   <div class="controls">
