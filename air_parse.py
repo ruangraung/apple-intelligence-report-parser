@@ -1283,8 +1283,11 @@ def main(argv=None):
     targets = {fmt: os.path.join(out_dir, f"{stem}_parsed.{fmt}") for fmt in formats}
     check_output_paths(input_path, out_dir, list(targets.values()), args.force)
 
+    # Every writer opens its target file directly, so the directory has to exist
+    # before any of them runs. --demo happened to be the only path that created it.
+    os.makedirs(out_dir, exist_ok=True)
+
     if args.demo:
-        os.makedirs(out_dir, exist_ok=True)
         with open(input_path, "w", encoding="utf-8") as handle:
             json.dump(synthetic_report(), handle, indent=2)
             handle.write("\n")
