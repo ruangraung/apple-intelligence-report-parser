@@ -117,12 +117,37 @@ def resolve_timezone(spec):
         ) from None
 
 
-def local_label(tz):
-    now = datetime.now(tz)
-    name = now.tzname() or ""
-    offset = now.strftime("%z")
+def offset_label(moment):
+    """Name one moment's zone and offset, e.g. 'EDT -04:00'."""
+    name = moment.tzname() or ""
+    offset = moment.strftime("%z")
     offset = f"{offset[:3]}:{offset[3:]}" if len(offset) == 5 else offset
     return f"{name} {offset}".strip()
+
+
+def local_label(tz):
+    return offset_label(datetime.now(tz))
+
+
+def record_timezone_label(records, tz, fallback):
+    """Name the offsets the records actually use.
+
+    A report can span a daylight-saving change, so a single label taken from
+    today's date is wrong for part of it.
+    """
+    labels = []
+    for record in records:
+        timestamp = record["timestamp"]
+        if timestamp is None:
+            continue
+        try:
+            moment = datetime.fromtimestamp(timestamp, tz)
+        except (OSError, OverflowError, ValueError):
+            continue
+        label = offset_label(moment)
+        if label not in labels:
+            labels.append(label)
+    return " / ".join(labels) if labels else fallback
 
 
 def to_epoch(value):
@@ -1316,6 +1341,10 @@ def main(argv=None):
         print("note: this report contains no modelRequests and no privateCloudComputeRequests")
 
     records, summary = parse_report(data, tz, args.max_content, args.redact)
+    # A fixed offset cannot change between records, so only a real zone database
+    # entry is worth re-labelling from the data.
+    if not isinstance(tz, timezone):
+        tz_label = record_timezone_label(records, tz, tz_label)
     source_name = os.path.basename(input_path)
 
     if "csv" in targets:
