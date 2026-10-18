@@ -1,0 +1,2 @@
+"Timestamp (UTC)","Timestamp (Local)","Origin","User Trigger","Use Case (Raw)","Source App","Request","Response","Model","Record Type"
+"2025-01-01 00:00:00","2025-01-01 00:00:00","OnDevice","Summarize","com.apple.SummarizationKit.mailMessage.synopsis","Writing Tools","PLAINTEXT_PROMPT_MARKER","PLAINTEXT_RESPONSE_MARKER","test-model","Model_Request"

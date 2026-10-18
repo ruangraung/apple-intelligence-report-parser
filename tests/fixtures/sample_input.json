@@ -1,0 +1,16 @@
+{
+  "modelRequests": [
+    {
+      "timestamp": 1735689600,
+      "identifier": "0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0",
+      "useCase": "com.apple.SummarizationKit.mailMessage.synopsis",
+      "clientIdentifier": "com.apple.WritingToolsUIService",
+      "prompt": "PLAINTEXT_PROMPT_MARKER",
+      "response": "PLAINTEXT_RESPONSE_MARKER",
+      "model": "test-model",
+      "modelVersion": "1.0",
+      "executionEnvironment": "OnDevice"
+    }
+  ],
+  "privateCloudComputeRequests": []
+}
