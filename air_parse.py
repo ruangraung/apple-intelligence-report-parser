@@ -1266,6 +1266,11 @@ def build_parser():
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
+    # A negative limit slices from the end and reports a nonsense remainder, so it
+    # is rejected rather than reinterpreted: 0 already means "no limit".
+    if args.max_content < 0:
+        print("input error: --max-content must be 0 or more; 0 means no limit")
+        sys.exit(1)
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     formats = [f.strip().lower() for f in args.formats.split(",") if f.strip()]
     unknown = [f for f in formats if f not in ("csv", "html", "txt", "md", "json")]

@@ -139,6 +139,49 @@ class TestF6TemplateBindings(unittest.TestCase):
         self.assertEqual(air_parse.template_prompt(text), self.BINDING_CONTENT)
 
 
+class TestF5MaxContent(unittest.TestCase):
+    """F5: a negative --max-content must be rejected, not silently truncate."""
+
+    def test_negative_value_is_a_clean_input_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "out")
+            code, output = run_cli(
+                [str(FIXTURE), "--out", out, "--formats", "csv", "--tz", "utc", "--max-content", "-1"]
+            )
+            self.assertEqual(code, 1, f"expected exit 1, got {code}:\n{output}")
+            self.assertIn("max-content", output)
+            self.assertNotIn("Traceback", output)
+            self.assertFalse(
+                os.path.exists(os.path.join(out, "sample_input_parsed.csv")),
+                "a rejected run must not write output",
+            )
+
+    def test_zero_still_means_no_limit(self):
+        self.assertEqual(air_parse.clamp("abcdef", 0), "abcdef")
+
+    def test_positive_limit_is_unchanged(self):
+        self.assertEqual(air_parse.clamp("abcdef", 3), "abc... [+3 chars]")
+
+    def test_a_positive_limit_truncates_and_reports_the_remainder(self):
+        """Cross-check the clamped cell against the uncapped cell from the same report."""
+        with tempfile.TemporaryDirectory() as tmp:
+            full_out = os.path.join(tmp, "full")
+            cap_out = os.path.join(tmp, "cap")
+            code, output = run_cli(
+                [str(FIXTURE), "--out", full_out, "--formats", "csv", "--tz", "utc", "--max-content", "0"]
+            )
+            self.assertEqual(code, 0, output)
+            code, output = run_cli(
+                [str(FIXTURE), "--out", cap_out, "--formats", "csv", "--tz", "utc", "--max-content", "4"]
+            )
+            self.assertEqual(code, 0, output)
+            with open(os.path.join(full_out, "sample_input_parsed.csv"), encoding="utf-8") as fh:
+                full = list(__import__("csv").reader(fh))[1][6]
+            with open(os.path.join(cap_out, "sample_input_parsed.csv"), encoding="utf-8") as fh:
+                capped = list(__import__("csv").reader(fh))[1][6]
+            self.assertEqual(capped, f"{full[:4]}... [+{len(full) - 4} chars]")
+
+
 class TestWriters(unittest.TestCase):
     """Every format lands, is non-empty, and is self-consistent."""
 
