@@ -264,7 +264,9 @@ def read_prompt(prompt_text):
 
 
 def template_prompt(text):
-    bindings = re.search(r"variableBindings:\s*\[(.+?)\],\s*locale:", text, re.DOTALL)
+    # The binding array is not always followed by a locale field, so the close of
+    # the array is matched on its own rather than only in the ", locale:" form.
+    bindings = re.search(r"variableBindings:\s*\[(.+?)\](?=\s*[,)]|\s*$)", text, re.DOTALL)
     if bindings:
         pairs = re.findall(r'"(\w+)":\s*"((?:[^"\\]|\\.)*)"', bindings.group(1))
         values = {}
