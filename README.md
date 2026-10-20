@@ -1,4 +1,5 @@
 # Apple Intelligence Report Parser
+![Apple Intelligence Report Parser demo: the generated HTML report with summary stats, origin breakdown bar, and a filterable, sortable requests table](examples/apple-intelligence-report-parser-demo-web.jpg)
 
 Reads the Apple Intelligence Report JSON that macOS exports from **Settings > Privacy & Security > Apple Intelligence Report**, and writes CSV, HTML, TXT, Markdown, and JSON you can actually read.
 
