@@ -419,6 +419,114 @@ class TestF9ExpandScope(unittest.TestCase):
         self.assertIn("currentPageRows().forEach", page)
 
 
+class TestPCCBranch(unittest.TestCase):
+    """The private cloud path, its attestation note, and the warning path.
+
+    The sample fixture ships an empty privateCloudComputeRequests list, so none of
+    this code ran in a test before. mixed_input.json carries a model request, two
+    private cloud requests and three malformed shapes on purpose.
+    """
+
+    MIXED = REPO_ROOT / "tests" / "fixtures" / "mixed_input.json"
+
+    def _payload(self, tmp, formats="json", report=None):
+        out = os.path.join(tmp, "out")
+        args = [str(report or self.MIXED), "--out", out, "--formats", formats, "--tz", "utc"]
+        code, output = run_cli(args)
+        self.assertEqual(code, 0, output)
+        name = pathlib.Path(report or self.MIXED).stem
+        return json.loads(pathlib.Path(out, f"{name}_parsed.json").read_text(encoding="utf-8"))
+
+    def test_both_branches_produce_records(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            payload = self._payload(tmp)
+        kinds = [record["record_type"] for record in payload["records"]]
+        self.assertEqual(kinds.count("Model_Request"), 1)
+        self.assertEqual(kinds.count("PCC_Request"), 2)
+        self.assertEqual(payload["summary"]["model_requests"], 1)
+        self.assertEqual(payload["summary"]["pcc_requests"], 2)
+
+    def test_a_private_cloud_record_reads_pipeline_and_attestation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            payload = self._payload(tmp)
+        record = next(
+            item for item in payload["records"]
+            if item["record_type"] == "PCC_Request" and item["event_id"].startswith("bbbb")
+        )
+        self.assertEqual(record["origin"], "PrivateCloudCompute")
+        self.assertEqual(record["use_case"], "mixed-pipeline")
+        self.assertEqual(record["source_app"], "PCC (mixed-pipeline)")
+        self.assertEqual(record["request"], "pipeline: mixed-pipeline")
+        self.assertEqual(record["response"], "adapter: com.apple.fm.language.instruct_server_v1.base")
+        self.assertEqual(record["model"], "com.apple.fm.language.instruct_server_v1.base")
+        self.assertIn("2 node(s)", record["detail"])
+        self.assertIn("1 validated", record["detail"])
+        self.assertIn("1 with attestation", record["detail"])
+        self.assertRegex(record["detail"], r"attestation sha256:[0-9a-f]{16}")
+
+    def test_the_attestation_bundle_never_reaches_an_output(self):
+        """The note exists so the multi-kilobyte bundles stay out of every format."""
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "out")
+            code, output = run_cli(
+                [str(self.MIXED), "--out", out, "--formats", "csv,html,txt,md,json", "--tz", "utc"]
+            )
+            self.assertEqual(code, 0, output)
+            for name in sorted(os.listdir(out)):
+                text = pathlib.Path(out, name).read_text(encoding="utf-8")
+                self.assertNotIn("BUNDLE_ALPHA_MARKER", text, f"{name} dumped the attestation bundle")
+
+    def test_malformed_entries_become_warnings_not_crashes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            payload = self._payload(tmp)
+        warnings = payload["summary"]["warnings"]
+        self.assertIn("modelRequests[2] is not an object; skipped", warnings)
+        self.assertIn("privateCloudComputeRequests[2] has no usable timestamp", warnings)
+        self.assertIn("privateCloudComputeRequests[2] has unparseable pipelineParameters", warnings)
+        self.assertEqual(len(warnings), 3, warnings)
+
+    def test_a_section_that_is_not_a_list_is_reported_and_skipped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            report = os.path.join(tmp, "report.json")
+            pathlib.Path(report).write_text(
+                json.dumps({"modelRequests": {"oops": 1}, "privateCloudComputeRequests": 7}),
+                encoding="utf-8",
+            )
+            payload = self._payload(tmp, report=report)
+        self.assertEqual(payload["summary"]["records"], 0)
+        self.assertIn("modelRequests is not a list; skipped", payload["summary"]["warnings"])
+        self.assertIn("privateCloudComputeRequests is not a list; skipped", payload["summary"]["warnings"])
+
+
+class TestDemoGoldenRun(unittest.TestCase):
+    """--demo is the path a first-time user takes, so its output is pinned too."""
+
+    GOLDEN = REPO_ROOT / "tests" / "golden" / "demo_report.csv.expected"
+
+    def test_demo_csv_matches_the_golden_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "demo")
+            # --tz utc keeps this independent of the machine's local timezone.
+            code, output = run_cli(["--demo", "--out", out, "--formats", "csv", "--force", "--tz", "utc"])
+            self.assertEqual(code, 0, output)
+            produced = pathlib.Path(out, "demo_report_parsed.csv").read_bytes()
+        self.assertTrue(self.GOLDEN.is_file(), f"missing golden file: {self.GOLDEN}")
+        self.assertEqual(produced, self.GOLDEN.read_bytes(), "demo CSV changed")
+
+    def test_demo_walks_the_private_cloud_path_with_no_warnings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "demo")
+            code, output = run_cli(["--demo", "--out", out, "--formats", "json", "--force", "--tz", "utc"])
+            self.assertEqual(code, 0, output)
+            payload = json.loads(
+                pathlib.Path(out, "demo_report_parsed.json").read_text(encoding="utf-8")
+            )
+        kinds = [record["record_type"] for record in payload["records"]]
+        self.assertIn("PCC_Request", kinds)
+        self.assertIn("Model_Request", kinds)
+        self.assertEqual(payload["summary"]["warnings"], [])
+
+
 class TestWriters(unittest.TestCase):
     """Every format lands, is non-empty, and is self-consistent."""
 
