@@ -226,6 +226,14 @@ The HTML page carries its own CSS and JavaScript, so you can open it offline and
 
 Stdlib `unittest`, like the tool itself. The suite covers label matching and template extraction, all five writers, a golden CSV comparison, the exit-code contract, and a check that nothing outside the standard library is imported.
 
+CI runs that same command on Python 3.9 through 3.13, and scans the full commit history with gitleaks.
+
+## Hooks
+
+    ./scripts/install-hooks.sh
+
+Copies the pre-commit hook into the hooks directory git reads. The hook refuses a commit when gitleaks finds what looks like a credential in the staged changes. It needs `gitleaks` on PATH (`brew install gitleaks`); without the binary it refuses rather than letting the commit through. Run the installer once per clone, because `.git/hooks` is not tracked.
+
 ## Exit codes
 
 | Code | Meaning |
