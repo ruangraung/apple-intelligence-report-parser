@@ -1,0 +1,20 @@
+#!/bin/bash
+# Refuse a commit when gitleaks finds something that looks like a credential in the
+# staged changes. Install it with ./scripts/install-hooks.sh: .git/hooks is not part
+# of the repository, so every clone has to run the installer once.
+
+GITLEAKS="$(command -v gitleaks || echo /home/linuxbrew/.linuxbrew/bin/gitleaks)"
+
+if [ ! -x "$GITLEAKS" ]; then
+    echo "gitleaks is not installed, so this commit is refused."
+    echo "Install it with: brew install gitleaks"
+    exit 1
+fi
+
+if ! "$GITLEAKS" git --staged --no-banner --redact; then
+    echo
+    echo "gitleaks found a possible secret in the staged changes."
+    echo "Move the value into .env, which is gitignored, and stage the file again."
+    echo "To commit anyway, which is not recommended: git commit --no-verify"
+    exit 1
+fi

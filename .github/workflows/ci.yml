@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: tests / Python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The README promises "Python 3.9 or newer", and 3.15 is what the maintainer runs,
+        # so both ends of this range have to stay green.
+        python: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5, pinned
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5, pinned
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Run the test suite
+        run: python3 -m unittest discover -s tests
+
+  secrets:
+    name: secret scan / every commit
+    runs-on: ubuntu-latest
+    env:
+      GITLEAKS_VERSION: "8.30.1"
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5, pinned
+        with:
+          # The scan below walks every commit, so the clone needs the full history.
+          fetch-depth: 0
+      - name: Fetch gitleaks and verify the download
+        run: |
+          url="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
+          curl -sSfL -o gitleaks.tar.gz "${url}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
+      - name: Scan every commit
+        # gitleaks-action builds its range from the push, which scans nothing when the
+        # oldest commit is the root. The binary with --all covers the whole history.
+        run: ./gitleaks git --log-opts=--all --no-banner --redact
