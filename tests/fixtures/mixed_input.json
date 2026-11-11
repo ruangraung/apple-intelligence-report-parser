@@ -1,0 +1,43 @@
+{
+  "modelRequests": [
+    {
+      "timestamp": 1735689600,
+      "identifier": "aaaaaaaa-1111-2222-3333-444444444444",
+      "useCase": "com.apple.SummarizationKit.mailMessage.synopsis",
+      "clientIdentifier": "com.apple.WritingToolsUIService",
+      "prompt": "MIXED_MODEL_PROMPT_MARKER",
+      "response": "MIXED_MODEL_RESPONSE_MARKER",
+      "model": "com.apple.fm.language.instruct_on_device_v1.text_summarizer",
+      "modelVersion": "1.0",
+      "executionEnvironment": "OnDevice"
+    },
+    "this entry is not an object"
+  ],
+  "privateCloudComputeRequests": [
+    {
+      "timestamp": 1735689700,
+      "requestId": "bbbbbbbb-1111-2222-3333-444444444444",
+      "pipelineKind": "mixed-pipeline",
+      "pipelineParameters": "{\"adapter\": \"com.apple.fm.language.instruct_server_v1.base\", \"model\": \"com.apple.fm.language.instruct_server_v1.base\"}",
+      "nodes": [
+        {
+          "node": "NODE_ALPHA",
+          "nodeState": "Validated",
+          "attestationBundle": "BUNDLE_ALPHA_MARKER"
+        },
+        {
+          "node": "NODE_BETA",
+          "nodeState": "Failed",
+          "attestationBundle": ""
+        },
+        "this node is not an object"
+      ]
+    },
+    {
+      "requestId": "cccccccc-1111-2222-3333-444444444444",
+      "pipelineKind": "broken-pipeline",
+      "pipelineParameters": "{not json",
+      "nodes": []
+    }
+  ]
+}
