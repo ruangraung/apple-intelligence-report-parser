@@ -498,6 +498,18 @@ class TestPCCBranch(unittest.TestCase):
         self.assertIn("modelRequests is not a list; skipped", payload["summary"]["warnings"])
         self.assertIn("privateCloudComputeRequests is not a list; skipped", payload["summary"]["warnings"])
 
+    def test_the_trigger_falls_back_to_the_pipeline_not_the_model_id(self):
+        """A model identifier in a column called Trigger reads as a bug, so the pipeline wins."""
+        with tempfile.TemporaryDirectory() as tmp:
+            payload = self._payload(tmp)
+        pcc = next(
+            item for item in payload["records"]
+            if item["record_type"] == "PCC_Request" and item["event_id"].startswith("bbbb")
+        )
+        self.assertEqual(pcc["user_trigger"], "mixed-pipeline")
+        self.assertNotEqual(pcc["user_trigger"], pcc["model"])
+        self.assertEqual(pcc["response"], "adapter: com.apple.fm.language.instruct_server_v1.base")
+
     def test_redaction_leaves_the_pipeline_metadata_alone(self):
         """--redact covers user text. A pipeline kind and an adapter name are not that."""
         with tempfile.TemporaryDirectory() as tmp:
@@ -695,6 +707,60 @@ class TestRecord(unittest.TestCase):
         """Redaction runs first, so a small --max-content truncates the marker itself."""
         presented = self._record(request="secret prompt").presented(5, True)
         self.assertEqual(presented.request, "[reda... [+34 chars]")
+
+
+class TestTally(unittest.TestCase):
+    """One counting helper instead of three copies, so the tables cannot drift."""
+
+    def _records(self):
+        return [
+            self._record("Model_Request", "Summarise", "Mail", "m1"),
+            self._record("Model_Request", "Summarise", "Notes", "m1"),
+            self._record("Model_Request", "Proofread", "", "m2"),
+            self._record("PCC_Request", "Knowledge", "PCC (knowledge)", "m3"),
+        ]
+
+    def _record(self, record_type, trigger, app, model):
+        return air_parse.Record(
+            timestamp=1735689600.0,
+            timestamp_utc="2025-01-01 00:00:00",
+            timestamp_local="2025-01-01 07:00:00",
+            event_id="",
+            origin="OnDevice" if record_type == "Model_Request" else "PrivateCloudCompute",
+            execution_environment_raw="OnDevice",
+            user_trigger=trigger,
+            use_case="",
+            source_app=app,
+            request="",
+            response="",
+            model=model,
+            model_version="",
+            record_type=record_type,
+            detail="",
+        )
+
+    def test_counts_come_out_commonest_first(self):
+        self.assertEqual(
+            air_parse.tally(self._records(), "user_trigger"),
+            [("Summarise", 2), ("Proofread", 1), ("Knowledge", 1)],
+        )
+
+    def test_a_record_type_filter_leaves_private_cloud_out(self):
+        self.assertEqual(
+            air_parse.tally(self._records(), "user_trigger", record_type="Model_Request"),
+            [("Summarise", 2), ("Proofread", 1)],
+        )
+
+    def test_empty_values_can_be_dropped(self):
+        with_empty = air_parse.tally(self._records(), "source_app")
+        without = air_parse.tally(self._records(), "source_app", skip_empty=True)
+        self.assertIn(("", 1), with_empty)
+        self.assertNotIn("", [label for label, _count in without])
+
+    def test_ties_keep_the_order_the_records_were_in(self):
+        """Counter preserves first-seen order, which is what the writers printed before."""
+        labels = [label for label, _count in air_parse.tally(self._records(), "user_trigger")]
+        self.assertEqual(labels, ["Summarise", "Proofread", "Knowledge"])
 
 
 class TestHtmlRenderers(unittest.TestCase):

@@ -493,7 +493,9 @@ def parse_report(data, tz, max_content, redact):
                 event_id=as_text(entry.get("requestId")),
                 origin="PrivateCloudCompute",
                 execution_environment_raw="PrivateCloudCompute",
-                user_trigger=user_trigger(adapter, pipeline),
+                # Pipeline kind first: when no label matches, the fallback should be the
+                # human-meaningful string, not the adapter's model identifier.
+                user_trigger=user_trigger(pipeline, adapter),
                 use_case=pipeline,
                 source_app=f"PCC ({pipeline})" if pipeline else "PCC",
                 request=f"pipeline: {pipeline or 'unknown'}",
@@ -518,6 +520,24 @@ def parse_report(data, tz, max_content, redact):
         "warnings": warnings,
     }
     return records, summary
+
+
+def tally(records, attribute, record_type=None, skip_empty=False):
+    """Count one field across records, commonest first.
+
+    The TXT and Markdown writers print the same three tables, and the counting was
+    copied between them rather than shared. Counter keeps first-seen order, so ties
+    still resolve the way they did when each writer built its own.
+    """
+    picked = []
+    for record in records:
+        if record_type is not None and record.record_type != record_type:
+            continue
+        value = getattr(record, attribute)
+        if skip_empty and not value:
+            continue
+        picked.append(value)
+    return Counter(picked).most_common()
 
 
 def write_csv(records, path, guard):
@@ -600,19 +620,15 @@ def write_txt(records, summary, path, source_name, tz_label, generated):
 
     lines.append(rule("="))
     lines.append("Counts by user trigger (model requests)")
-    for label, count in Counter(
-        r.user_trigger for r in records if r.record_type == "Model_Request"
-    ).most_common():
+    for label, count in tally(records, "user_trigger", record_type="Model_Request"):
         lines.append(f"  {count:4d}  {label}")
     lines.append("")
     lines.append("Counts by source app (model requests)")
-    for label, count in Counter(
-        r.source_app for r in records if r.record_type == "Model_Request" and r.source_app
-    ).most_common():
+    for label, count in tally(records, "source_app", record_type="Model_Request", skip_empty=True):
         lines.append(f"  {count:4d}  {label}")
     lines.append("")
     lines.append("Counts by model")
-    for label, count in Counter(r.model for r in records if r.model).most_common():
+    for label, count in tally(records, "model", skip_empty=True):
         lines.append(f"  {count:4d}  {label}")
     if summary["warnings"]:
         lines.append("")
@@ -676,25 +692,21 @@ def write_md(records, summary, path, source_name, tz_label, generated):
     lines.append("")
     lines.append("| Count | Trigger |")
     lines.append("|---|---|")
-    for label, count in Counter(
-        r.user_trigger for r in records if r.record_type == "Model_Request"
-    ).most_common():
+    for label, count in tally(records, "user_trigger", record_type="Model_Request"):
         lines.append(f"| {count} | {label} |")
     lines.append("")
     lines.append("### By source app (model requests)")
     lines.append("")
     lines.append("| Count | App |")
     lines.append("|---|---|")
-    for label, count in Counter(
-        r.source_app for r in records if r.record_type == "Model_Request" and r.source_app
-    ).most_common():
+    for label, count in tally(records, "source_app", record_type="Model_Request", skip_empty=True):
         lines.append(f"| {count} | {label} |")
     lines.append("")
     lines.append("### By model")
     lines.append("")
     lines.append("| Count | Model |")
     lines.append("|---|---|")
-    for label, count in Counter(r.model for r in records if r.model).most_common():
+    for label, count in tally(records, "model", skip_empty=True):
         lines.append(f"| {count} | {label} |")
     lines.append("")
 
