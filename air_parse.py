@@ -644,125 +644,144 @@ def write_md(records, summary, path, source_name, tz_label, generated):
         handle.write("\n".join(lines))
 
 
+def render_rows(records):
+    """Build the records table: one visible row plus one hidden detail row per record."""
+    escape = html_mod.escape
+    if not records:
+        return '  <p class="empty">No requests in this report.</p>'
+
+    rows = []
+    for index, record in enumerate(records):
+        badge = ORIGIN_CLASSES.get(record["origin"], "unknown")
+        detail_id = f"detail-{index}"
+        search_blob = " ".join(
+            as_text(record.get(key))
+            for key in (
+                "timestamp_utc",
+                "timestamp_local",
+                "origin",
+                "user_trigger",
+                "use_case",
+                "source_app",
+                "request",
+                "response",
+                "model",
+                "model_version",
+                "detail",
+                "event_id",
+                "record_type",
+            )
+        ).lower()
+        request_preview = preview_text(record["request"])
+        rows.append(
+            f'      <tr class="row" tabindex="0" data-detail="{detail_id}" '
+            f'data-origin="{escape(record["origin"])}" data-search="{escape(search_blob)}">'
+            f'<td class="mono"><span class="chev" aria-hidden="true">\u25b8</span>{escape(record["timestamp_local"])}</td>'
+            f'<td><span class="badge {badge}">{escape(record["origin"])}</span></td>'
+            f'<td>{escape(record["source_app"])}</td>'
+            f'<td>{escape(record["user_trigger"])}</td>'
+            f'<td class="preview">{escape(request_preview)}</td>'
+            "</tr>"
+        )
+
+        detail_fields = [
+            ("Timestamp (UTC)", record["timestamp_utc"]),
+            ("Use case", record["use_case"]),
+            ("Model", record["model"]),
+        ]
+        if record["model_version"]:
+            detail_fields.append(("Model version", record["model_version"]))
+        detail_fields.append(("Record type", record["record_type"]))
+        if record["event_id"]:
+            detail_fields.append(("Event ID", record["event_id"]))
+        if record["detail"]:
+            detail_fields.append(("PCC detail", record["detail"]))
+        meta_html = "".join(
+            f'<div><span class="k">{escape(label)}</span>'
+            f'<span class="v mono">{escape(as_text(value)) or "&mdash;"}</span></div>'
+            for label, value in detail_fields
+        )
+        rows.append(
+            f'      <tr class="detail-row" id="{detail_id}" hidden><td colspan="5">'
+            f'<div class="detail-meta">{meta_html}</div>'
+            '<div class="detail-block"><span class="k">Full request</span>'
+            f'<pre>{escape(record["request"]) or "(empty)"}</pre></div>'
+            '<div class="detail-block"><span class="k">Full response</span>'
+            f'<pre>{escape(record["response"]) or "(empty)"}</pre></div>'
+            "</td></tr>"
+        )
+
+    return (
+        "  <table id=\"records\">\n    <thead><tr>"
+        '<th tabindex="0">Timestamp (Local)</th>'
+        '<th tabindex="0">Origin</th>'
+        '<th tabindex="0">App</th>'
+        '<th tabindex="0">Trigger</th>'
+        '<th tabindex="0">Request</th>'
+        "</tr></thead>\n    <tbody>\n"
+        + "\n".join(rows)
+        + "\n    </tbody>\n  </table>"
+    )
+
+
+def render_breakdown(summary):
+    """Return the origin bar markup and any CSS it needs for its unknown segment.
+
+    Segment widths come from the record counts, so the bar adds up to the whole
+    report and needs no rounding. Unknown records get their own segment instead of
+    vanishing from the bar while the stats row still counts them.
+    """
+    total = summary["records"]
+    on_device = summary["on_device"]
+    cloud = summary["private_cloud"]
+    unknown = summary["unknown_origin"]
+    if not total:
+        return "", ""
+
+    on_device_pct = round(on_device / total * 100)
+    cloud_pct = round(cloud / total * 100)
+    unknown_pct = round(unknown / total * 100)
+
+    unknown_segment = '<div class="unknown"></div>\n' if unknown else ""
+    unknown_label = (
+        f'    <span><span class="dot unknown"></span>Unknown {unknown_pct}%</span>\n'
+        if unknown else ""
+    )
+    breakdown_html = (
+        '  <div class="breakdown-bar">\n'
+        '    <div class="on-device"></div>\n'
+        '    <div class="cloud"></div>\n'
+        f'{unknown_segment}'
+        '  </div>\n'
+        '  <div class="breakdown-labels">\n'
+        f'    <span><span class="dot on-device"></span>On-device {on_device_pct}%</span>\n'
+        f'    <span><span class="dot cloud"></span>Private cloud {cloud_pct}%</span>\n'
+        f'{unknown_label}'
+        '  </div>\n'
+    )
+    unknown_css = ""
+    if unknown:
+        unknown_css = (
+            f".breakdown-bar .unknown {{ background: var(--text-tertiary); flex: {unknown}; }}\n"
+            ".breakdown-labels .dot.unknown { background: var(--text-tertiary); }\n"
+        )
+    return breakdown_html, unknown_css
+
+
 def write_html(records, summary, path, source_name, tz_label, generated):
     escape = html_mod.escape
 
-    if records:
-        rows = []
-        for index, record in enumerate(records):
-            badge = ORIGIN_CLASSES.get(record["origin"], "unknown")
-            detail_id = f"detail-{index}"
-            search_blob = " ".join(
-                as_text(record.get(key))
-                for key in (
-                    "timestamp_utc",
-                    "timestamp_local",
-                    "origin",
-                    "user_trigger",
-                    "use_case",
-                    "source_app",
-                    "request",
-                    "response",
-                    "model",
-                    "model_version",
-                    "detail",
-                    "event_id",
-                    "record_type",
-                )
-            ).lower()
-            request_preview = preview_text(record["request"])
-            rows.append(
-                f'      <tr class="row" tabindex="0" data-detail="{detail_id}" '
-                f'data-origin="{escape(record["origin"])}" data-search="{escape(search_blob)}">'
-                f'<td class="mono"><span class="chev" aria-hidden="true">\u25b8</span>{escape(record["timestamp_local"])}</td>'
-                f'<td><span class="badge {badge}">{escape(record["origin"])}</span></td>'
-                f'<td>{escape(record["source_app"])}</td>'
-                f'<td>{escape(record["user_trigger"])}</td>'
-                f'<td class="preview">{escape(request_preview)}</td>'
-                "</tr>"
-            )
-
-            detail_fields = [
-                ("Timestamp (UTC)", record["timestamp_utc"]),
-                ("Use case", record["use_case"]),
-                ("Model", record["model"]),
-            ]
-            if record["model_version"]:
-                detail_fields.append(("Model version", record["model_version"]))
-            detail_fields.append(("Record type", record["record_type"]))
-            if record["event_id"]:
-                detail_fields.append(("Event ID", record["event_id"]))
-            if record["detail"]:
-                detail_fields.append(("PCC detail", record["detail"]))
-            meta_html = "".join(
-                f'<div><span class="k">{escape(label)}</span>'
-                f'<span class="v mono">{escape(as_text(value)) or "&mdash;"}</span></div>'
-                for label, value in detail_fields
-            )
-            rows.append(
-                f'      <tr class="detail-row" id="{detail_id}" hidden><td colspan="5">'
-                f'<div class="detail-meta">{meta_html}</div>'
-                '<div class="detail-block"><span class="k">Full request</span>'
-                f'<pre>{escape(record["request"]) or "(empty)"}</pre></div>'
-                '<div class="detail-block"><span class="k">Full response</span>'
-                f'<pre>{escape(record["response"]) or "(empty)"}</pre></div>'
-                "</td></tr>"
-            )
-        table = (
-            "  <table id=\"records\">\n    <thead><tr>"
-            '<th tabindex="0">Timestamp (Local)</th>'
-            '<th tabindex="0">Origin</th>'
-            '<th tabindex="0">App</th>'
-            '<th tabindex="0">Trigger</th>'
-            '<th tabindex="0">Request</th>'
-            "</tr></thead>\n    <tbody>\n"
-            + "\n".join(rows)
-            + "\n    </tbody>\n  </table>"
-        )
-    else:
-        table = '  <p class="empty">No requests in this report.</p>'
+    table = render_rows(records)
 
     warnings_html = ""
     if summary["warnings"]:
         items = "".join(f"<li>{escape(w)}</li>" for w in summary["warnings"])
         warnings_html = f'  <div class="warn"><b>Warnings</b><ul>{items}</ul></div>\n'
 
-    # Segment widths come from the record counts, so the bar adds up to the whole
-    # report and needs no rounding. Unknown records get their own segment instead
-    # of vanishing from the bar while the stats row still counts them.
-    total = summary["records"]
+    breakdown_html, breakdown_unknown_css = render_breakdown(summary)
+    # The bar's container CSS uses the raw counts as flex weights, so they stay here.
     on_device = summary["on_device"]
     cloud = summary["private_cloud"]
-    unknown = summary["unknown_origin"]
-    on_device_pct = round(on_device / total * 100) if total else 0
-    cloud_pct = round(cloud / total * 100) if total else 0
-    unknown_pct = round(unknown / total * 100) if total else 0
-
-    breakdown_html = ""
-    breakdown_unknown_css = ""
-    if total:
-        unknown_segment = '<div class="unknown"></div>\n' if unknown else ""
-        unknown_label = (
-            f'    <span><span class="dot unknown"></span>Unknown {unknown_pct}%</span>\n'
-            if unknown else ""
-        )
-        breakdown_html = (
-            '  <div class="breakdown-bar">\n'
-            '    <div class="on-device"></div>\n'
-            '    <div class="cloud"></div>\n'
-            f'{unknown_segment}'
-            '  </div>\n'
-            '  <div class="breakdown-labels">\n'
-            f'    <span><span class="dot on-device"></span>On-device {on_device_pct}%</span>\n'
-            f'    <span><span class="dot cloud"></span>Private cloud {cloud_pct}%</span>\n'
-            f'{unknown_label}'
-            '  </div>\n'
-        )
-        if unknown:
-            breakdown_unknown_css = (
-                f".breakdown-bar .unknown {{ background: var(--text-tertiary); flex: {unknown}; }}\n"
-                ".breakdown-labels .dot.unknown { background: var(--text-tertiary); }\n"
-            )
 
     document = f"""<!DOCTYPE html>
 <html lang="en">
