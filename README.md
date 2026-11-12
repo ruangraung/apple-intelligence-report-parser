@@ -21,6 +21,24 @@ flowchart LR
     style H fill:#f0f0f0,stroke:#ccc,stroke-dasharray: 5 5
 ```
 
+## Quick start
+
+```sh
+git clone https://github.com/ruangraung/apple-intelligence-report-parser.git
+cd apple-intelligence-report-parser
+python3 air_parse.py --demo --out air_demo    # synthetic data, touches nothing of yours
+open air_demo/demo_report_parsed.html
+```
+
+Then your own export:
+
+```sh
+python3 air_parse.py ~/Downloads/Apple_Intelligence_Report.json --out air_parsed
+open air_parsed/Apple_Intelligence_Report_parsed.html
+```
+
+The rest of this page covers where the export comes from, what every flag does, and how to share the output without leaking your prompts.
+
 ## What is an "Apple Intelligence Report"?
 
 Since macOS started routing some Apple Intelligence requests to Apple's servers (Private Cloud Compute) instead of running them on your Mac, Apple added a report so you can see exactly what happened: which app asked for what, when, whether it stayed on-device or left for the cloud, and (for cloud requests) the cryptographic attestation proving which code ran on Apple's servers.
@@ -45,9 +63,20 @@ The Apple Intelligence Report export is a single minified line of JSON with esca
 
 ## Requirements
 
-- Python 3.9 or newer (uses only the standard library: `argparse`, `csv`, `hashlib`, `html`, `json`, `re`, `datetime`, etc.)
+- Python 3.9 or newer (standard library only: `argparse`, `collections`, `csv`, `dataclasses`, `datetime`, `hashlib`, `html`, `json`, `os`, `re`, `string`, `sys`, `zoneinfo`)
 - No `pip install`, no `requirements.txt`, no network access at any point
-- Parses the schema documented in `docs/report-format.md`, verified against a real export from macOS 27 ("Golden Gate") and re-checked in the test suite against a small synthetic fixture. See [Known limitations](#known-limitations) if you're on a different version.
+- Parses the schema documented in `docs/report-format.md`
+
+What has actually been tested, kept in one place so the claims below cannot drift apart:
+
+| What | Value |
+|---|---|
+| Real export parsed | macOS **27.0.x**, the version the schema was first verified against |
+| Re-checked on macOS 27.2.1 | **not yet** |
+| Python versions with a green suite | **3.9 to 3.15**, in CI on every push |
+| Test suite | **70 tests**, three of them golden files |
+
+See [Known limitations](#known-limitations) if you are on a macOS version other than the one above.
 
 ## Installation
 
@@ -171,7 +200,7 @@ If the path is awkward to type, drag the file from Finder into the Terminal wind
 | `--out` | `air_parsed` | Output directory (created if it does not exist) |
 | `--formats` | `csv,html,txt,md,json` | Comma-separated subset of formats to write |
 | `--tz` | `local` | Timezone for the "Local" columns: `local`, `utc`, a numeric offset (`+7`, `-4.5`), or an IANA name (`Asia/Jakarta`) |
-| `--max-content` | `2000` | Truncate each request/response after N characters; `0` for no limit |
+| `--max-content` | `2000` | Truncate each request/response after N characters; `0` for no limit. A limit shorter than the `--redact` marker truncates the marker too, so give a redacted run a few hundred characters at least |
 | `--force` | off | Overwrite existing output files instead of refusing |
 
 ### Privacy
@@ -218,15 +247,17 @@ The HTML page carries its own CSS and JavaScript, so you can open it offline and
 | MD | Markdown with a metadata table, per-request headings, and summary counts. Reads cleanly in Obsidian and similar tools |
 | TXT | Plain text summary with per-request detail and count tables |
 | CSV | Spreadsheet-ready, with a formula-injection guard on by default |
-| JSON | Machine-readable structured output |
+| JSON | Machine-readable: source, timestamps, summary counters, warnings, and one object per request with fifteen named fields (`timestamp`, `origin`, `user_trigger`, `use_case`, `source_app`, `request`, `response`, `model`, `record_type`, `detail`, and so on) |
 
 ## Tests
 
     python3 -m unittest discover -s tests
 
-Stdlib `unittest`, like the tool itself. The suite covers label matching and template extraction, all five writers, a golden CSV comparison, the exit-code contract, and a check that nothing outside the standard library is imported.
+Stdlib `unittest`, like the tool itself. **70 tests** covering label matching and template extraction, all five writers, the private cloud branch with its attestation note and warning path, the exit-code contract, and a check that nothing outside the standard library is imported.
 
-CI runs that same command on Python 3.9 through 3.13, and scans the full commit history with gitleaks.
+Three files in `tests/golden/` compare output byte for byte: a CSV, the `--demo` CSV, and the whole HTML page. Changing output on purpose means regenerating them and reading the diff. Changing it by accident is exactly what they catch.
+
+CI runs that same command on Python 3.9 through 3.15, and scans the full commit history with gitleaks.
 
 ## Hooks
 
@@ -239,14 +270,16 @@ Copies the pre-commit hook into the hooks directory git reads. The hook refuses 
 | Code | Meaning |
 |---|---|
 | 0 | Success |
-| 1 | Input error (missing file, invalid JSON, unknown format) |
-| 2 | Output files already exist without `--force` |
-| 3 | Refused output location (an OS path, or the input file itself) |
+| 1 | Input error (missing file, invalid JSON, unknown format, unusable `--tz`) |
+| 2 | Output files already exist without `--force`, or the command line itself was malformed |
+| 3 | Refused output location (an OS directory, or a path that is not a directory) |
+
+Code 2 carries two meanings because `argparse` returns it for a bad flag before this tool ever runs. Read the message, not only the number.
 
 ## Known limitations
 
 - **The report format is not a stable, documented Apple API.** This tool parses against the schema Apple happens to export today (see `docs/report-format.md`). A macOS update could change field names, nesting, or content encoding at any time and break parsing without warning. If a future export looks wrong or fields show up empty, that's the likely cause. Please open an issue with the (redacted) schema difference.
-- **Tested on macOS 27 ("Golden Gate").** Reports from other OS versions may parse fine, partially, or not at all.
+- **Tested on macOS 27.0.x, and not re-checked on 27.2.1 yet.** Reports from other OS versions may parse fine, partially, or not at all. If a newer export breaks something, that is the expected risk of an undocumented format, and an issue naming the fields that changed is the most useful report you can file.
 - **Requires Python 3.9+.** There is no pinned interpreter check; older Pythons will fail with a syntax or import error rather than a friendly message.
 - **Prompt extraction is best-effort.** Prompts are frequently wrapped in Swift `PromptTemplateInfo(...)` serializations. The parser looks for common variable-binding keys (`userPrompt`, `prompt`, `userContent`, `doc`, `freeformStoryPromptQuery`, etc.), but a template using an unrecognized key will fall through to showing the raw serialization instead of clean text.
 - **`useCase` to human-readable "trigger" mapping is a lookup table**, not a general parser. Use cases Apple hasn't shipped yet, or has renamed, will show up as their raw identifier instead of a friendly label.
