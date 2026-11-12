@@ -577,6 +577,46 @@ class TestErrorContract(unittest.TestCase):
         self.assertEqual(table, {"InputError": 1, "OutputExists": 2, "RefusedLocation": 3})
 
 
+class TestHtmlSnapshot(unittest.TestCase):
+    """Pin the whole page, not substrings of the source.
+
+    The HTML is what a user actually opens, and until now the tests only checked that
+    certain strings appeared in it. The generated-at stamp is passed in, so the
+    snapshot does not encode the clock. mixed_input renders both record types.
+    """
+
+    GOLDEN = REPO_ROOT / "tests" / "golden" / "mixed_input.html.expected"
+    FIXTURE_PATH = REPO_ROOT / "tests" / "fixtures" / "mixed_input.json"
+
+    def _render(self, tmp, generated="2026-01-01 00:00:00"):
+        data = air_parse.load_report(str(self.FIXTURE_PATH))
+        tz, tz_label = air_parse.resolve_timezone("utc")
+        records, summary = air_parse.parse_report(data, tz, 2000, False)
+        path = os.path.join(tmp, "mixed_input_parsed.html")
+        air_parse.write_html(
+            records, summary, path, self.FIXTURE_PATH.name, tz_label, generated
+        )
+        return pathlib.Path(path).read_bytes()
+
+    def test_the_rendered_page_matches_the_golden_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            produced = self._render(tmp)
+        self.assertTrue(self.GOLDEN.is_file(), f"missing golden file: {self.GOLDEN}")
+        self.assertEqual(produced, self.GOLDEN.read_bytes(), "the HTML output changed")
+
+    def test_the_generated_stamp_is_the_only_clock_dependency(self):
+        """If anything else reads the clock, this fails on the line that changed."""
+        with tempfile.TemporaryDirectory() as tmp:
+            first = self._render(tmp, generated="2026-01-01 00:00:00")
+            second = self._render(tmp, generated="2030-12-31 23:59:59")
+        first_lines = first.splitlines()
+        second_lines = second.splitlines()
+        self.assertEqual(len(first_lines), len(second_lines), "the stamp changed the page shape")
+        changed = [line for line in second_lines if line not in first_lines]
+        self.assertEqual(len(changed), 1, f"more than the stamp moved: {changed}")
+        self.assertIn(b"Generated 2030-12-31 23:59:59", changed[0])
+
+
 class TestWriters(unittest.TestCase):
     """Every format lands, is non-empty, and is self-consistent."""
 
