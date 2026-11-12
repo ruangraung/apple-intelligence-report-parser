@@ -527,6 +527,56 @@ class TestDemoGoldenRun(unittest.TestCase):
         self.assertEqual(payload["summary"]["warnings"], [])
 
 
+class TestErrorContract(unittest.TestCase):
+    """Failures are typed exceptions, and main is the only place that picks a code.
+
+    Before this, load_report and check_output_paths called sys.exit directly, so a
+    caller could not tell the failure modes apart without catching SystemExit.
+    """
+
+    def test_load_report_reports_a_missing_file_as_an_input_error(self):
+        missing = os.path.join(tempfile.gettempdir(), "definitely-not-here.json")
+        with self.assertRaises(air_parse.InputError) as caught:
+            air_parse.load_report(missing)
+        self.assertIn("is not a regular file", str(caught.exception))
+
+    def test_load_report_reports_bad_json_as_an_input_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "bad.json")
+            pathlib.Path(path).write_text("{not json", encoding="utf-8")
+            with self.assertRaises(air_parse.InputError) as caught:
+                air_parse.load_report(path)
+        self.assertIn("invalid JSON at line 1", str(caught.exception))
+
+    def test_check_output_paths_refuses_an_os_path(self):
+        with self.assertRaises(air_parse.RefusedLocation) as caught:
+            air_parse.check_output_paths(str(FIXTURE), "/usr", ["/usr/x_parsed.csv"], False)
+        self.assertIn("operating system location", str(caught.exception))
+
+    def test_check_output_paths_refuses_an_existing_target_without_force(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = os.path.join(tmp, "report_parsed.csv")
+            pathlib.Path(target).write_text("already here", encoding="utf-8")
+            with self.assertRaises(air_parse.OutputExists) as caught:
+                air_parse.check_output_paths(str(FIXTURE), tmp, [target], False)
+            self.assertIn("pass --force to overwrite", str(caught.exception))
+            # --force is the difference between refusing and proceeding.
+            air_parse.check_output_paths(str(FIXTURE), tmp, [target], True)
+
+    def test_main_returns_the_code_instead_of_raising_system_exit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "out")
+            buf = io.StringIO()
+            with redirect_stdout(buf), redirect_stderr(buf):
+                code = air_parse.main([os.path.join(tmp, "missing.json"), "--out", out])
+        self.assertEqual(code, 1)
+        self.assertIn("is not a regular file", buf.getvalue())
+
+    def test_the_code_table_matches_the_readme(self):
+        table = {kind.__name__: code for kind, code in air_parse.EXIT_CODES}
+        self.assertEqual(table, {"InputError": 1, "OutputExists": 2, "RefusedLocation": 3})
+
+
 class TestWriters(unittest.TestCase):
     """Every format lands, is non-empty, and is self-consistent."""
 
