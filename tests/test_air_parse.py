@@ -617,6 +617,43 @@ class TestHtmlSnapshot(unittest.TestCase):
         self.assertIn(b"Generated 2030-12-31 23:59:59", changed[0])
 
 
+class TestHtmlRenderers(unittest.TestCase):
+    """The two renderers are pure functions now, so they can be checked without files."""
+
+    def test_rows_for_an_empty_report(self):
+        self.assertEqual(
+            air_parse.render_rows([]),
+            '  <p class="empty">No requests in this report.</p>',
+        )
+
+    def test_rows_carry_the_id_the_toggle_looks_for(self):
+        data = air_parse.load_report(str(FIXTURE))
+        tz, _label = air_parse.resolve_timezone("utc")
+        records, _summary = air_parse.parse_report(data, tz, 2000, False)
+        markup = air_parse.render_rows(records)
+        self.assertIn('data-detail="detail-0"', markup)
+        self.assertIn('id="detail-0" hidden', markup)
+
+    def test_breakdown_is_empty_without_records(self):
+        summary = {"records": 0, "on_device": 0, "private_cloud": 0, "unknown_origin": 0}
+        self.assertEqual(air_parse.render_breakdown(summary), ("", ""))
+
+    def test_breakdown_labels_follow_the_record_counts(self):
+        summary = {"records": 10, "on_device": 7, "private_cloud": 3, "unknown_origin": 0}
+        markup, css = air_parse.render_breakdown(summary)
+        self.assertIn("On-device 70%", markup)
+        self.assertIn("Private cloud 30%", markup)
+        self.assertNotIn("Unknown", markup)
+        self.assertEqual(css, "", "no unknown records, so no extra CSS")
+
+    def test_breakdown_gives_unknown_records_a_segment_and_its_css(self):
+        summary = {"records": 3, "on_device": 1, "private_cloud": 1, "unknown_origin": 1}
+        markup, css = air_parse.render_breakdown(summary)
+        self.assertIn('class="unknown"', markup)
+        self.assertIn("Unknown 33%", markup)
+        self.assertIn("flex: 1", css)
+
+
 class TestWriters(unittest.TestCase):
     """Every format lands, is non-empty, and is self-consistent."""
 
