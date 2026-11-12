@@ -48,3 +48,22 @@ jobs:
         # gitleaks-action builds its range from the push, which scans nothing when the
         # oldest commit is the root. The binary with --all covers the whole history.
         run: ./gitleaks git --log-opts=--all --no-banner --redact
+
+  ci:
+    # The one check branch protection requires. It always reports a conclusion, so a
+    # matrix job that fails or gets cancelled still blocks a merge, and a future edit to
+    # the matrix cannot silently unpin the gate.
+    #
+    # The only interpolated values below are needs.*.result, which are GitHub's own
+    # conclusion enums (success, failure, cancelled, skipped). No user-supplied text
+    # reaches this shell.
+    name: ci
+    needs: [tests, secrets]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require both jobs to have succeeded
+        run: |
+          echo "tests=${{ needs.tests.result }} secrets=${{ needs.secrets.result }}"
+          test "${{ needs.tests.result }}" = "success"
+          test "${{ needs.secrets.result }}" = "success"
