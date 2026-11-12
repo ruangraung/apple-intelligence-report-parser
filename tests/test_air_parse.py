@@ -653,6 +653,18 @@ class TestHtmlRenderers(unittest.TestCase):
         self.assertIn("Unknown 33%", markup)
         self.assertIn("flex: 1", css)
 
+    def test_unknown_css_lands_in_the_style_block(self):
+        """render_breakdown hands CSS back to write_html, which feeds it to the template."""
+        extra = ".breakdown-bar .unknown { flex: 1; }\n"
+        css = air_parse.HTML_CSS.substitute(on_device=1, cloud=1, unknown_css=extra)
+        self.assertIn(extra, css)
+        self.assertNotIn("$", css)
+
+    def test_the_style_and_script_constants_carry_no_escaped_braces(self):
+        """They lived in an f-string before, where every literal brace was doubled."""
+        self.assertNotIn("{{", air_parse.HTML_CSS.template)
+        self.assertNotIn("{{", air_parse.HTML_JS)
+
 
 class TestWriters(unittest.TestCase):
     """Every format lands, is non-empty, and is self-consistent."""
@@ -741,7 +753,7 @@ class TestSecurityContract(unittest.TestCase):
         source = AIR_PARSE_PATH.read_text(encoding="utf-8")
         allowed = {
             "__future__", "argparse", "csv", "hashlib", "html", "json", "os", "re",
-            "sys", "collections", "datetime", "zoneinfo",
+            "sys", "collections", "datetime", "zoneinfo", "string",
         }
         for line in source.splitlines():
             stripped = line.strip()
