@@ -21,6 +21,7 @@ import re
 import sys
 from collections import Counter
 from datetime import datetime, timedelta, timezone
+from string import Template
 
 MAX_INPUT_BYTES = 512 * 1024 * 1024
 
@@ -768,29 +769,8 @@ def render_breakdown(summary):
     return breakdown_html, unknown_css
 
 
-def write_html(records, summary, path, source_name, tz_label, generated):
-    escape = html_mod.escape
-
-    table = render_rows(records)
-
-    warnings_html = ""
-    if summary["warnings"]:
-        items = "".join(f"<li>{escape(w)}</li>" for w in summary["warnings"])
-        warnings_html = f'  <div class="warn"><b>Warnings</b><ul>{items}</ul></div>\n'
-
-    breakdown_html, breakdown_unknown_css = render_breakdown(summary)
-    # The bar's container CSS uses the raw counts as flex weights, so they stay here.
-    on_device = summary["on_device"]
-    cloud = summary["private_cloud"]
-
-    document = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Apple Intelligence Report, parsed</title>
-<style>
-:root {{
+HTML_CSS = Template(
+    """:root {
   --bg: #f5f5f7;
   --surface: #fff;
   --text: #1d1d1f;
@@ -810,9 +790,9 @@ def write_html(records, summary, path, source_name, tz_label, generated):
   --warn-border: #ff9800;
   --code-bg: #f5f5f7;
   --shadow: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06);
-}}
-@media (prefers-color-scheme: dark) {{
-  :root {{
+}
+@media (prefers-color-scheme: dark) {
+  :root {
     --bg: #000;
     --surface: #1c1c1e;
     --text: #f5f5f7;
@@ -832,87 +812,87 @@ def write_html(records, summary, path, source_name, tz_label, generated):
     --warn-border: #ff9f0a;
     --code-bg: #2c2c2e;
     --shadow: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2);
-  }}
-}}
-* {{ margin:0; padding:0; box-sizing:border-box; }}
-body {{
+  }
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
   background: var(--bg);
   color: var(--text);
   padding: 24px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
-}}
-.header {{
+}
+.header {
   background: var(--surface);
   border-radius: 12px;
   padding: 28px;
   margin-bottom: 16px;
   box-shadow: var(--shadow);
-}}
-h1 {{
+}
+h1 {
   font-size: 22px;
   font-weight: 600;
   letter-spacing: -0.01em;
-}}
-h1 span {{ font-weight: 400; color: var(--text-tertiary); font-size: 14px; margin-left: 8px; }}
-.sub {{ font-size: 13px; color: var(--text-secondary); margin-top: 6px; }}
-.stats-row {{
+}
+h1 span { font-weight: 400; color: var(--text-tertiary); font-size: 14px; margin-left: 8px; }
+.sub { font-size: 13px; color: var(--text-secondary); margin-top: 6px; }
+.stats-row {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
   margin-top: 20px;
-}}
-.stat {{
+}
+.stat {
   background: var(--bg);
   border-radius: 8px;
   padding: 10px 14px;
   font-size: 12px;
   color: var(--text-secondary);
   border: 1px solid var(--border-soft);
-}}
-.stat b {{ font-size: 18px; font-weight: 600; color: var(--text); display: block; }}
-.breakdown-bar {{
+}
+.stat b { font-size: 18px; font-weight: 600; color: var(--text); display: block; }
+.breakdown-bar {
   display: flex;
   height: 6px;
   border-radius: 3px;
   overflow: hidden;
   margin-top: 16px;
   background: var(--border-soft);
-}}
-.breakdown-bar .on-device {{ background: #34c759; flex: {on_device}; }}
-.breakdown-bar .cloud {{ background: #007aff; flex: {cloud}; }}
-{breakdown_unknown_css}.breakdown-labels {{ display: flex; gap: 16px; margin-top: 8px; font-size: 12px; color: var(--text-secondary); }}
-.breakdown-labels .dot {{ display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }}
-.breakdown-labels .dot.on-device {{ background: #34c759; }}
-.breakdown-labels .dot.cloud {{ background: #007aff; }}
-.warn {{
+}
+.breakdown-bar .on-device { background: #34c759; flex: $on_device; }
+.breakdown-bar .cloud { background: #007aff; flex: $cloud; }
+$unknown_css.breakdown-labels { display: flex; gap: 16px; margin-top: 8px; font-size: 12px; color: var(--text-secondary); }
+.breakdown-labels .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+.breakdown-labels .dot.on-device { background: #34c759; }
+.breakdown-labels .dot.cloud { background: #007aff; }
+.warn {
   font-size: 13px;
   background: var(--warn-bg);
   border-left: 3px solid var(--warn-border);
   padding: 12px 14px;
   border-radius: 6px;
   margin-top: 16px;
-}}
-.warn ul {{ margin: 6px 0 0 20px; padding: 0; }}
-.warn li {{ margin-bottom: 2px; }}
-.panel {{
+}
+.warn ul { margin: 6px 0 0 20px; padding: 0; }
+.warn li { margin-bottom: 2px; }
+.panel {
   background: var(--surface);
   border-radius: 12px;
   padding: 20px;
   margin-bottom: 16px;
   box-shadow: var(--shadow);
-}}
-.panel h2 {{ font-size: 16px; font-weight: 600; margin-bottom: 14px; letter-spacing: -0.01em; }}
-.controls {{
+}
+.panel h2 { font-size: 16px; font-weight: 600; margin-bottom: 14px; letter-spacing: -0.01em; }
+.controls {
   display: flex;
   gap: 10px;
   align-items: center;
   flex-wrap: wrap;
   margin-bottom: 14px;
-}}
-.controls label {{ font-size: 13px; color: var(--text-secondary); }}
-input[type=search], select {{
+}
+.controls label { font-size: 13px; color: var(--text-secondary); }
+input[type=search], select {
   font: inherit;
   font-size: 13px;
   padding: 7px 10px;
@@ -921,17 +901,17 @@ input[type=search], select {{
   background: var(--surface);
   color: var(--text);
   min-width: 180px;
-}}
-select {{ cursor: pointer; }}
-input:focus-visible, select:focus-visible, th[tabindex]:focus-visible {{
+}
+select { cursor: pointer; }
+input:focus-visible, select:focus-visible, th[tabindex]:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-}}
-.count {{ font-size: 12px; color: var(--text-tertiary); margin-left: auto; }}
-.table-scroll {{ overflow-x: auto; -webkit-overflow-scrolling: touch; }}
-table {{ width: 100%; border-collapse: collapse; font-size: 12px; }}
-th, td {{ text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border-soft); vertical-align: top; }}
-th {{
+}
+.count { font-size: 12px; color: var(--text-tertiary); margin-left: auto; }
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border-soft); vertical-align: top; }
+th {
   background: var(--code-bg);
   font-size: 11px;
   text-transform: uppercase;
@@ -942,51 +922,51 @@ th {{
   user-select: none;
   position: sticky;
   top: 0;
-}}
-th:hover {{ background: var(--border-soft); }}
-.mono {{ font-family: 'SF Mono', ui-monospace, monospace; font-size: 11px; color: var(--text-secondary); }}
-tr.row {{ cursor: pointer; }}
-tr.row:hover {{ background: var(--code-bg); }}
-tr.row.expanded {{ background: var(--code-bg); }}
-tr.row:focus-visible {{ outline: 2px solid var(--accent); outline-offset: -2px; }}
-.chev {{
+}
+th:hover { background: var(--border-soft); }
+.mono { font-family: 'SF Mono', ui-monospace, monospace; font-size: 11px; color: var(--text-secondary); }
+tr.row { cursor: pointer; }
+tr.row:hover { background: var(--code-bg); }
+tr.row.expanded { background: var(--code-bg); }
+tr.row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.chev {
   display: inline-block;
   width: 12px;
   margin-right: 6px;
   color: var(--text-tertiary);
   transition: transform 0.15s ease;
-}}
-tr.row.expanded .chev {{ transform: rotate(90deg); }}
-td.preview {{
+}
+tr.row.expanded .chev { transform: rotate(90deg); }
+td.preview {
   max-width: 480px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}}
-tr.detail-row td {{
+}
+tr.detail-row td {
   background: var(--code-bg);
   padding: 16px 20px;
   border-bottom: 1px solid var(--border);
   cursor: default;
-}}
-.detail-meta {{
+}
+.detail-meta {
   display: flex;
   flex-wrap: wrap;
   gap: 10px 28px;
   margin-bottom: 14px;
-}}
-.detail-meta > div {{ min-width: 140px; }}
-.detail-meta .k, .detail-block .k {{
+}
+.detail-meta > div { min-width: 140px; }
+.detail-meta .k, .detail-block .k {
   display: block;
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.03em;
   color: var(--text-tertiary);
   margin-bottom: 2px;
-}}
-.detail-meta .v {{ font-size: 12px; color: var(--text); }}
-.detail-block {{ margin-top: 12px; }}
-.detail-block pre {{
+}
+.detail-meta .v { font-size: 12px; color: var(--text); }
+.detail-block { margin-top: 12px; }
+.detail-block pre {
   white-space: pre-wrap;
   word-break: break-word;
   font-family: 'SF Mono', ui-monospace, monospace;
@@ -1000,16 +980,16 @@ tr.detail-row td {{
   margin-top: 6px;
   max-height: 480px;
   overflow: auto;
-}}
-.pagination {{
+}
+.pagination {
   display: flex;
   align-items: center;
   gap: 10px;
   margin-top: 14px;
   font-size: 13px;
   color: var(--text-secondary);
-}}
-.pagination button, .controls button {{
+}
+.pagination button, .controls button {
   font: inherit;
   font-size: 13px;
   padding: 6px 12px;
@@ -1018,11 +998,11 @@ tr.detail-row td {{
   background: var(--surface);
   color: var(--text);
   cursor: pointer;
-}}
-.pagination button:hover:not(:disabled), .controls button:hover:not(:disabled) {{ background: var(--border-soft); }}
-.pagination button:disabled, .controls button:disabled {{ opacity: 0.4; cursor: default; }}
-.pagination button:focus-visible, .controls button:focus-visible {{ outline: 2px solid var(--accent); outline-offset: 2px; }}
-.badge {{
+}
+.pagination button:hover:not(:disabled), .controls button:hover:not(:disabled) { background: var(--border-soft); }
+.pagination button:disabled, .controls button:disabled { opacity: 0.4; cursor: default; }
+.pagination button:focus-visible, .controls button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.badge {
   display: inline-block;
   padding: 2px 8px;
   border-radius: 4px;
@@ -1030,32 +1010,171 @@ tr.detail-row td {{
   font-weight: 600;
   letter-spacing: 0.02em;
   text-transform: uppercase;
-}}
-.badge.on-device {{ background: var(--on-device-bg); color: var(--on-device-text); }}
-.badge.cloud {{ background: var(--cloud-bg); color: var(--cloud-text); }}
-.badge.unknown {{ background: var(--unknown-bg); color: var(--unknown-text); }}
-.empty {{ font-size: 14px; color: var(--text-tertiary); padding: 12px 0; }}
-.footer {{
+}
+.badge.on-device { background: var(--on-device-bg); color: var(--on-device-text); }
+.badge.cloud { background: var(--cloud-bg); color: var(--cloud-text); }
+.badge.unknown { background: var(--unknown-bg); color: var(--unknown-text); }
+.empty { font-size: 14px; color: var(--text-tertiary); padding: 12px 0; }
+.footer {
   font-size: 12px;
   color: var(--text-tertiary);
   padding: 8px 4px 0;
-}}
-@media (max-width: 768px) {{
-  body {{ padding: 12px; }}
-  .header, .panel {{ padding: 16px; border-radius: 10px; }}
-  .stats-row {{ gap: 6px; }}
-  .stat {{ padding: 8px 10px; flex: 1 1 calc(50% - 6px); }}
-  .stat b {{ font-size: 16px; }}
-  .controls {{ flex-direction: column; align-items: stretch; }}
-  input[type=search], select {{ min-width: 0; width: 100%; }}
-  .count {{ margin-left: 0; text-align: right; }}
-  td.preview {{ max-width: 160px; }}
-  .detail-meta {{ gap: 8px 16px; }}
-  .detail-meta > div {{ min-width: 45%; }}
-  th, td {{ padding: 8px; }}
-  h1 {{ font-size: 18px; }}
-  .pagination {{ flex-wrap: wrap; }}
-}}
+}
+@media (max-width: 768px) {
+  body { padding: 12px; }
+  .header, .panel { padding: 16px; border-radius: 10px; }
+  .stats-row { gap: 6px; }
+  .stat { padding: 8px 10px; flex: 1 1 calc(50% - 6px); }
+  .stat b { font-size: 16px; }
+  .controls { flex-direction: column; align-items: stretch; }
+  input[type=search], select { min-width: 0; width: 100%; }
+  .count { margin-left: 0; text-align: right; }
+  td.preview { max-width: 160px; }
+  .detail-meta { gap: 8px 16px; }
+  .detail-meta > div { min-width: 45%; }
+  th, td { padding: 8px; }
+  h1 { font-size: 18px; }
+  .pagination { flex-wrap: wrap; }
+}"""
+)
+
+HTML_JS = """const PAGE_SIZE = 25;
+const table = document.getElementById('records');
+const tbody = table ? table.querySelector('tbody') : null;
+let dataRows = tbody ? Array.from(tbody.querySelectorAll('tr.row')) : [];
+const search = document.getElementById('q');
+const originSelect = document.getElementById('origin');
+const count = document.getElementById('count');
+const pageInfo = document.getElementById('pageInfo');
+const prevBtn = document.getElementById('prevPage');
+const nextBtn = document.getElementById('nextPage');
+const expandPageBtn = document.getElementById('expandPage');
+const collapsePageBtn = document.getElementById('collapsePage');
+
+let filteredRows = dataRows.slice();
+let currentPage = 1;
+
+function detailFor(row) {
+  const id = row.getAttribute('data-detail');
+  return id ? document.getElementById(id) : null;
+}
+
+function setExpanded(row, expanded) {
+  const detail = detailFor(row);
+  if (!detail) return;
+  detail.hidden = !expanded;
+  row.classList.toggle('expanded', expanded);
+}
+
+function currentPageRows() {
+  const start = (currentPage - 1) * PAGE_SIZE;
+  return filteredRows.slice(start, start + PAGE_SIZE);
+}
+
+function render() {
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
+  if (currentPage > totalPages) currentPage = totalPages;
+  if (currentPage < 1) currentPage = 1;
+  const visible = new Set(currentPageRows());
+  dataRows.forEach(row => {
+    const show = visible.has(row);
+    row.hidden = !show;
+    if (!show) setExpanded(row, false);
+  });
+  if (count) count.textContent = filteredRows.length + ' of ' + dataRows.length + ' shown';
+  if (pageInfo) pageInfo.textContent = 'Page ' + currentPage + ' of ' + totalPages;
+  if (prevBtn) prevBtn.disabled = currentPage <= 1;
+  if (nextBtn) nextBtn.disabled = currentPage >= totalPages;
+}
+
+function applyFilters() {
+  const needle = (search && search.value || '').toLowerCase();
+  const want = originSelect ? originSelect.value : '';
+  filteredRows = dataRows.filter(row => {
+    const hay = row.getAttribute('data-search') || '';
+    const origin = row.getAttribute('data-origin') || '';
+    return (!needle || hay.includes(needle)) && (!want || origin === want);
+  });
+  currentPage = 1;
+  render();
+}
+
+if (search) search.addEventListener('input', applyFilters);
+if (originSelect) originSelect.addEventListener('change', applyFilters);
+if (prevBtn) prevBtn.addEventListener('click', () => { currentPage -= 1; render(); });
+if (nextBtn) nextBtn.addEventListener('click', () => { currentPage += 1; render(); });
+// Deliberately limited to the rows on screen: render() collapses rows that leave
+// the page, and a detail row whose own row is hidden would render as unanchored text.
+if (expandPageBtn) expandPageBtn.addEventListener('click', () => { currentPageRows().forEach(row => setExpanded(row, true)); });
+if (collapsePageBtn) collapsePageBtn.addEventListener('click', () => { currentPageRows().forEach(row => setExpanded(row, false)); });
+
+dataRows.forEach(row => {
+  row.addEventListener('click', () => {
+    const detail = detailFor(row);
+    if (!detail) return;
+    setExpanded(row, detail.hidden);
+  });
+  row.addEventListener('keydown', event => {
+    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); row.click(); }
+  });
+});
+
+applyFilters();
+
+let sortState = {};
+if (table) {
+  const headers = Array.from(table.querySelectorAll('th'));
+  headers.forEach((th, index) => {
+    function sort() {
+      sortState[index] = !sortState[index];
+      const direction = sortState[index] ? 1 : -1;
+      dataRows.sort((a, b) => {
+        const left = (a.cells[index] ? a.cells[index].textContent : '').trim();
+        const right = (b.cells[index] ? b.cells[index].textContent : '').trim();
+        return left.localeCompare(right, undefined, {numeric: true}) * direction;
+      });
+      dataRows.forEach(row => {
+        tbody.appendChild(row);
+        const detail = detailFor(row);
+        if (detail) tbody.appendChild(detail);
+      });
+      applyFilters();
+    }
+    th.addEventListener('click', sort);
+    th.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); sort(); }
+    });
+  });
+}"""
+
+
+def write_html(records, summary, path, source_name, tz_label, generated):
+    escape = html_mod.escape
+
+    table = render_rows(records)
+
+    warnings_html = ""
+    if summary["warnings"]:
+        items = "".join(f"<li>{escape(w)}</li>" for w in summary["warnings"])
+        warnings_html = f'  <div class="warn"><b>Warnings</b><ul>{items}</ul></div>\n'
+
+    breakdown_html, breakdown_unknown_css = render_breakdown(summary)
+    # The bar's container CSS uses the raw counts as flex weights, so they stay here.
+    on_device = summary["on_device"]
+    cloud = summary["private_cloud"]
+
+    css = HTML_CSS.substitute(
+        on_device=on_device, cloud=cloud, unknown_css=breakdown_unknown_css
+    )
+
+    document = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Apple Intelligence Report, parsed</title>
+<style>
+{css}
 </style>
 </head>
 <body>
@@ -1098,114 +1217,7 @@ tr.detail-row td {{
 </div>
 <div class="footer">Click a row to expand the full request and response. Click a column heading to sort. Filtering and pagination run locally; this file loads nothing from the network.</div>
 <script>
-const PAGE_SIZE = 25;
-const table = document.getElementById('records');
-const tbody = table ? table.querySelector('tbody') : null;
-let dataRows = tbody ? Array.from(tbody.querySelectorAll('tr.row')) : [];
-const search = document.getElementById('q');
-const originSelect = document.getElementById('origin');
-const count = document.getElementById('count');
-const pageInfo = document.getElementById('pageInfo');
-const prevBtn = document.getElementById('prevPage');
-const nextBtn = document.getElementById('nextPage');
-const expandPageBtn = document.getElementById('expandPage');
-const collapsePageBtn = document.getElementById('collapsePage');
-
-let filteredRows = dataRows.slice();
-let currentPage = 1;
-
-function detailFor(row) {{
-  const id = row.getAttribute('data-detail');
-  return id ? document.getElementById(id) : null;
-}}
-
-function setExpanded(row, expanded) {{
-  const detail = detailFor(row);
-  if (!detail) return;
-  detail.hidden = !expanded;
-  row.classList.toggle('expanded', expanded);
-}}
-
-function currentPageRows() {{
-  const start = (currentPage - 1) * PAGE_SIZE;
-  return filteredRows.slice(start, start + PAGE_SIZE);
-}}
-
-function render() {{
-  const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
-  if (currentPage > totalPages) currentPage = totalPages;
-  if (currentPage < 1) currentPage = 1;
-  const visible = new Set(currentPageRows());
-  dataRows.forEach(row => {{
-    const show = visible.has(row);
-    row.hidden = !show;
-    if (!show) setExpanded(row, false);
-  }});
-  if (count) count.textContent = filteredRows.length + ' of ' + dataRows.length + ' shown';
-  if (pageInfo) pageInfo.textContent = 'Page ' + currentPage + ' of ' + totalPages;
-  if (prevBtn) prevBtn.disabled = currentPage <= 1;
-  if (nextBtn) nextBtn.disabled = currentPage >= totalPages;
-}}
-
-function applyFilters() {{
-  const needle = (search && search.value || '').toLowerCase();
-  const want = originSelect ? originSelect.value : '';
-  filteredRows = dataRows.filter(row => {{
-    const hay = row.getAttribute('data-search') || '';
-    const origin = row.getAttribute('data-origin') || '';
-    return (!needle || hay.includes(needle)) && (!want || origin === want);
-  }});
-  currentPage = 1;
-  render();
-}}
-
-if (search) search.addEventListener('input', applyFilters);
-if (originSelect) originSelect.addEventListener('change', applyFilters);
-if (prevBtn) prevBtn.addEventListener('click', () => {{ currentPage -= 1; render(); }});
-if (nextBtn) nextBtn.addEventListener('click', () => {{ currentPage += 1; render(); }});
-// Deliberately limited to the rows on screen: render() collapses rows that leave
-// the page, and a detail row whose own row is hidden would render as unanchored text.
-if (expandPageBtn) expandPageBtn.addEventListener('click', () => {{ currentPageRows().forEach(row => setExpanded(row, true)); }});
-if (collapsePageBtn) collapsePageBtn.addEventListener('click', () => {{ currentPageRows().forEach(row => setExpanded(row, false)); }});
-
-dataRows.forEach(row => {{
-  row.addEventListener('click', () => {{
-    const detail = detailFor(row);
-    if (!detail) return;
-    setExpanded(row, detail.hidden);
-  }});
-  row.addEventListener('keydown', event => {{
-    if (event.key === 'Enter' || event.key === ' ') {{ event.preventDefault(); row.click(); }}
-  }});
-}});
-
-applyFilters();
-
-let sortState = {{}};
-if (table) {{
-  const headers = Array.from(table.querySelectorAll('th'));
-  headers.forEach((th, index) => {{
-    function sort() {{
-      sortState[index] = !sortState[index];
-      const direction = sortState[index] ? 1 : -1;
-      dataRows.sort((a, b) => {{
-        const left = (a.cells[index] ? a.cells[index].textContent : '').trim();
-        const right = (b.cells[index] ? b.cells[index].textContent : '').trim();
-        return left.localeCompare(right, undefined, {{numeric: true}}) * direction;
-      }});
-      dataRows.forEach(row => {{
-        tbody.appendChild(row);
-        const detail = detailFor(row);
-        if (detail) tbody.appendChild(detail);
-      }});
-      applyFilters();
-    }}
-    th.addEventListener('click', sort);
-    th.addEventListener('keydown', event => {{
-      if (event.key === 'Enter' || event.key === ' ') {{ event.preventDefault(); sort(); }}
-    }});
-  }});
-}}
+{HTML_JS}
 </script>
 </body>
 </html>"""
