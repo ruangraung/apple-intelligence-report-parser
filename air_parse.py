@@ -20,6 +20,7 @@ import os
 import re
 import sys
 from collections import Counter
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from string import Template
 
@@ -91,6 +92,67 @@ CSV_COLUMNS = [
     "Record Type",
 ]
 
+
+@dataclass(frozen=True)
+class Record:
+    """One parsed row.
+
+    Five writers read these fields, so the shape lives here instead of in fifteen
+    string keys repeated up and down the file.
+    """
+
+    timestamp: float | None
+    timestamp_utc: str
+    timestamp_local: str
+    event_id: str
+    origin: str
+    execution_environment_raw: str
+    user_trigger: str
+    use_case: str
+    source_app: str
+    request: str
+    response: str
+    model: str
+    model_version: str
+    record_type: str
+    detail: str
+
+    def to_json_dict(self):
+        """The JSON writer used to emit this mapping directly, so the order is kept."""
+        return {
+            "timestamp": self.timestamp,
+            "timestamp_utc": self.timestamp_utc,
+            "timestamp_local": self.timestamp_local,
+            "event_id": self.event_id,
+            "origin": self.origin,
+            "execution_environment_raw": self.execution_environment_raw,
+            "user_trigger": self.user_trigger,
+            "use_case": self.use_case,
+            "source_app": self.source_app,
+            "request": self.request,
+            "response": self.response,
+            "model": self.model,
+            "model_version": self.model_version,
+            "record_type": self.record_type,
+            "detail": self.detail,
+        }
+
+    def presented(self, max_content, redact):
+        """Apply both text policies in one place: redact first, then clamp.
+
+        The private cloud branch builds its request and response from pipeline
+        metadata rather than user text, so it does not pass through here.
+        """
+        request, response = self.request, self.response
+        if redact:
+            request, response = redact_text(request), redact_text(response)
+        return replace(
+            self,
+            request=clamp(request, max_content),
+            response=clamp(response, max_content),
+        )
+
+
 def resolve_timezone(spec):
     """Return (tzinfo, label). Accepts local, utc, an offset in hours, or an IANA name."""
     key = (spec or "local").strip()
@@ -138,7 +200,7 @@ def record_timezone_label(records, tz, fallback):
     """
     labels = []
     for record in records:
-        timestamp = record["timestamp"]
+        timestamp = record.timestamp
         if timestamp is None:
             continue
         try:
@@ -382,31 +444,26 @@ def parse_report(data, tz, max_content, redact):
         ts = to_epoch(entry.get("timestamp"))
         if ts is None:
             warnings.append(f"modelRequests[{index}] has no usable timestamp")
-        request = read_prompt(entry.get("prompt"))
-        response = read_response(entry.get("response"))
-        if redact:
-            request, response = redact_text(request), redact_text(response)
-        records.append(
-            {
-                "timestamp": ts,
-                "timestamp_utc": format_epoch(ts, timezone.utc),
-                "timestamp_local": format_epoch(ts, tz),
-                "event_id": as_text(entry.get("identifier")),
-                "origin": classify_origin(as_text(entry.get("executionEnvironment"))),
-                "execution_environment_raw": as_text(entry.get("executionEnvironment")),
-                "user_trigger": user_trigger(
-                    entry.get("useCase"), entry.get("prompt"), entry.get("model")
-                ),
-                "use_case": as_text(entry.get("useCase")),
-                "source_app": source_app(entry.get("clientIdentifier"), entry.get("useCase")),
-                "request": clamp(request, max_content),
-                "response": clamp(response, max_content),
-                "model": as_text(entry.get("model")),
-                "model_version": as_text(entry.get("modelVersion")),
-                "record_type": "Model_Request",
-                "detail": "",
-            }
+        record = Record(
+            timestamp=ts,
+            timestamp_utc=format_epoch(ts, timezone.utc),
+            timestamp_local=format_epoch(ts, tz),
+            event_id=as_text(entry.get("identifier")),
+            origin=classify_origin(as_text(entry.get("executionEnvironment"))),
+            execution_environment_raw=as_text(entry.get("executionEnvironment")),
+            user_trigger=user_trigger(
+                entry.get("useCase"), entry.get("prompt"), entry.get("model")
+            ),
+            use_case=as_text(entry.get("useCase")),
+            source_app=source_app(entry.get("clientIdentifier"), entry.get("useCase")),
+            request=read_prompt(entry.get("prompt")),
+            response=read_response(entry.get("response")),
+            model=as_text(entry.get("model")),
+            model_version=as_text(entry.get("modelVersion")),
+            record_type="Model_Request",
+            detail="",
         )
+        records.append(record.presented(max_content, redact))
 
     for index, entry in enumerate(pcc_requests, 1):
         if not isinstance(entry, dict):
@@ -429,35 +486,35 @@ def parse_report(data, tz, max_content, redact):
         nodes = [n for n in nodes if isinstance(n, dict)] if isinstance(nodes, list) else []
         adapter = as_text(params.get("adapter"))
         records.append(
-            {
-                "timestamp": ts,
-                "timestamp_utc": format_epoch(ts, timezone.utc),
-                "timestamp_local": format_epoch(ts, tz),
-                "event_id": as_text(entry.get("requestId")),
-                "origin": "PrivateCloudCompute",
-                "execution_environment_raw": "PrivateCloudCompute",
-                "user_trigger": user_trigger(adapter, pipeline),
-                "use_case": pipeline,
-                "source_app": f"PCC ({pipeline})" if pipeline else "PCC",
-                "request": f"pipeline: {pipeline or 'unknown'}",
-                "response": f"adapter: {adapter or 'unknown'}",
-                "model": as_text(params.get("model")),
-                "model_version": "",
-                "record_type": "PCC_Request",
-                "detail": attestation_note(nodes),
-            }
+            Record(
+                timestamp=ts,
+                timestamp_utc=format_epoch(ts, timezone.utc),
+                timestamp_local=format_epoch(ts, tz),
+                event_id=as_text(entry.get("requestId")),
+                origin="PrivateCloudCompute",
+                execution_environment_raw="PrivateCloudCompute",
+                user_trigger=user_trigger(adapter, pipeline),
+                use_case=pipeline,
+                source_app=f"PCC ({pipeline})" if pipeline else "PCC",
+                request=f"pipeline: {pipeline or 'unknown'}",
+                response=f"adapter: {adapter or 'unknown'}",
+                model=as_text(params.get("model")),
+                model_version="",
+                record_type="PCC_Request",
+                detail=attestation_note(nodes),
+            )
         )
 
-    records.sort(key=lambda r: (r["timestamp"] is None, r["timestamp"]))
+    records.sort(key=lambda r: (r.timestamp is None, r.timestamp))
     summary = {
         "records": len(records),
-        "model_requests": sum(1 for r in records if r["record_type"] == "Model_Request"),
-        "pcc_requests": sum(1 for r in records if r["record_type"] == "PCC_Request"),
+        "model_requests": sum(1 for r in records if r.record_type == "Model_Request"),
+        "pcc_requests": sum(1 for r in records if r.record_type == "PCC_Request"),
         "model_entries": len(model_requests),
         "pcc_entries": len(pcc_requests),
-        "on_device": sum(1 for r in records if r["origin"] == "OnDevice"),
-        "private_cloud": sum(1 for r in records if r["origin"] == "PrivateCloudCompute"),
-        "unknown_origin": sum(1 for r in records if r["origin"] == "Unknown"),
+        "on_device": sum(1 for r in records if r.origin == "OnDevice"),
+        "private_cloud": sum(1 for r in records if r.origin == "PrivateCloudCompute"),
+        "unknown_origin": sum(1 for r in records if r.origin == "Unknown"),
         "warnings": warnings,
     }
     return records, summary
@@ -472,16 +529,16 @@ def write_csv(records, path, guard):
         for record in records:
             writer.writerow(
                 [
-                    record["timestamp_utc"],
-                    record["timestamp_local"],
-                    record["origin"],
-                    csv_guard(record["user_trigger"], guard),
-                    csv_guard(record["use_case"], guard),
-                    csv_guard(record["source_app"], guard),
-                    csv_guard(record["request"], guard),
-                    csv_guard(record["response"], guard),
-                    csv_guard(record["model"], guard),
-                    record["record_type"],
+                    record.timestamp_utc,
+                    record.timestamp_local,
+                    record.origin,
+                    csv_guard(record.user_trigger, guard),
+                    csv_guard(record.use_case, guard),
+                    csv_guard(record.source_app, guard),
+                    csv_guard(record.request, guard),
+                    csv_guard(record.response, guard),
+                    csv_guard(record.model, guard),
+                    record.record_type,
                 ]
             )
 
@@ -492,7 +549,7 @@ def write_json(records, summary, path, source_name, tz_label, generated):
         "generated_utc": generated,
         "local_timezone": tz_label,
         "summary": summary,
-        "records": records,
+        "records": [record.to_json_dict() for record in records],
     }
     with open(path, "w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2, ensure_ascii=False)
@@ -519,43 +576,43 @@ def write_txt(records, summary, path, source_name, tz_label, generated):
     )
     if skipped:
         lines.append(f"Skipped entries : {skipped} (not JSON objects, see warnings)")
-    stamped = [r for r in records if r["timestamp"] is not None]
+    stamped = [r for r in records if r.timestamp is not None]
     if stamped:
-        lines.append(f"Time range (UTC): {stamped[0]['timestamp_utc']} -> {stamped[-1]['timestamp_utc']}")
+        lines.append(f"Time range (UTC): {stamped[0].timestamp_utc} -> {stamped[-1].timestamp_utc}")
     lines.append("")
 
     for record in records:
         lines.append(rule())
-        lines.append(f"[{record['timestamp_utc']} UTC | {record['timestamp_local']} local] "
-                     f"{record['record_type']} | {record['origin']}")
-        lines.append(f"  Event ID     : {record['event_id']}")
-        lines.append(f"  User trigger : {record['user_trigger']}")
-        lines.append(f"  Use case     : {record['use_case']}")
-        lines.append(f"  Source app   : {record['source_app']}")
-        lines.append(f"  Model        : {record['model']} {record['model_version']}".rstrip())
-        if record["request"]:
-            lines.append(f"  Request      : {record['request']}")
-        if record["response"]:
-            lines.append(f"  Response     : {record['response']}")
-        if record["detail"]:
-            lines.append(f"  PCC detail   : {record['detail']}")
+        lines.append(f"[{record.timestamp_utc} UTC | {record.timestamp_local} local] "
+                     f"{record.record_type} | {record.origin}")
+        lines.append(f"  Event ID     : {record.event_id}")
+        lines.append(f"  User trigger : {record.user_trigger}")
+        lines.append(f"  Use case     : {record.use_case}")
+        lines.append(f"  Source app   : {record.source_app}")
+        lines.append(f"  Model        : {record.model} {record.model_version}".rstrip())
+        if record.request:
+            lines.append(f"  Request      : {record.request}")
+        if record.response:
+            lines.append(f"  Response     : {record.response}")
+        if record.detail:
+            lines.append(f"  PCC detail   : {record.detail}")
         lines.append("")
 
     lines.append(rule("="))
     lines.append("Counts by user trigger (model requests)")
     for label, count in Counter(
-        r["user_trigger"] for r in records if r["record_type"] == "Model_Request"
+        r.user_trigger for r in records if r.record_type == "Model_Request"
     ).most_common():
         lines.append(f"  {count:4d}  {label}")
     lines.append("")
     lines.append("Counts by source app (model requests)")
     for label, count in Counter(
-        r["source_app"] for r in records if r["record_type"] == "Model_Request" and r["source_app"]
+        r.source_app for r in records if r.record_type == "Model_Request" and r.source_app
     ).most_common():
         lines.append(f"  {count:4d}  {label}")
     lines.append("")
     lines.append("Counts by model")
-    for label, count in Counter(r["model"] for r in records if r["model"]).most_common():
+    for label, count in Counter(r.model for r in records if r.model).most_common():
         lines.append(f"  {count:4d}  {label}")
     if summary["warnings"]:
         lines.append("")
@@ -597,20 +654,20 @@ def write_md(records, summary, path, source_name, tz_label, generated):
             "OnDevice": "ON-DEVICE",
             "PrivateCloudCompute": "CLOUD",
             "Unknown": "UNKNOWN",
-        }.get(record["origin"], "UNKNOWN")
-        lines.append(f"### {record['timestamp_local']} | {origin_badge} | {record['user_trigger']}")
+        }.get(record.origin, "UNKNOWN")
+        lines.append(f"### {record.timestamp_local} | {origin_badge} | {record.user_trigger}")
         lines.append("")
-        lines.append(f"- **Origin:** {record['origin']}")
-        lines.append(f"- **Source app:** {record['source_app'] or 'n/a'}")
-        lines.append(f"- **Use case:** {record['use_case'] or 'n/a'}")
-        lines.append(f"- **Model:** {record['model'] or 'n/a'}")
-        lines.append(f"- **Record type:** {record['record_type']}")
-        if record["request"]:
-            lines.append(f"- **Request:** {record['request']}")
-        if record["response"]:
-            lines.append(f"- **Response:** {record['response']}")
-        if record["detail"]:
-            lines.append(f"- **PCC detail:** {record['detail']}")
+        lines.append(f"- **Origin:** {record.origin}")
+        lines.append(f"- **Source app:** {record.source_app or 'n/a'}")
+        lines.append(f"- **Use case:** {record.use_case or 'n/a'}")
+        lines.append(f"- **Model:** {record.model or 'n/a'}")
+        lines.append(f"- **Record type:** {record.record_type}")
+        if record.request:
+            lines.append(f"- **Request:** {record.request}")
+        if record.response:
+            lines.append(f"- **Response:** {record.response}")
+        if record.detail:
+            lines.append(f"- **PCC detail:** {record.detail}")
         lines.append("")
 
     lines.append("## Summary counts")
@@ -620,7 +677,7 @@ def write_md(records, summary, path, source_name, tz_label, generated):
     lines.append("| Count | Trigger |")
     lines.append("|---|---|")
     for label, count in Counter(
-        r["user_trigger"] for r in records if r["record_type"] == "Model_Request"
+        r.user_trigger for r in records if r.record_type == "Model_Request"
     ).most_common():
         lines.append(f"| {count} | {label} |")
     lines.append("")
@@ -629,7 +686,7 @@ def write_md(records, summary, path, source_name, tz_label, generated):
     lines.append("| Count | App |")
     lines.append("|---|---|")
     for label, count in Counter(
-        r["source_app"] for r in records if r["record_type"] == "Model_Request" and r["source_app"]
+        r.source_app for r in records if r.record_type == "Model_Request" and r.source_app
     ).most_common():
         lines.append(f"| {count} | {label} |")
     lines.append("")
@@ -637,7 +694,7 @@ def write_md(records, summary, path, source_name, tz_label, generated):
     lines.append("")
     lines.append("| Count | Model |")
     lines.append("|---|---|")
-    for label, count in Counter(r["model"] for r in records if r["model"]).most_common():
+    for label, count in Counter(r.model for r in records if r.model).most_common():
         lines.append(f"| {count} | {label} |")
     lines.append("")
 
@@ -653,10 +710,10 @@ def render_rows(records):
 
     rows = []
     for index, record in enumerate(records):
-        badge = ORIGIN_CLASSES.get(record["origin"], "unknown")
+        badge = ORIGIN_CLASSES.get(record.origin, "unknown")
         detail_id = f"detail-{index}"
         search_blob = " ".join(
-            as_text(record.get(key))
+            as_text(getattr(record, key, ""))
             for key in (
                 "timestamp_utc",
                 "timestamp_local",
@@ -673,30 +730,30 @@ def render_rows(records):
                 "record_type",
             )
         ).lower()
-        request_preview = preview_text(record["request"])
+        request_preview = preview_text(record.request)
         rows.append(
             f'      <tr class="row" tabindex="0" data-detail="{detail_id}" '
-            f'data-origin="{escape(record["origin"])}" data-search="{escape(search_blob)}">'
-            f'<td class="mono"><span class="chev" aria-hidden="true">\u25b8</span>{escape(record["timestamp_local"])}</td>'
-            f'<td><span class="badge {badge}">{escape(record["origin"])}</span></td>'
-            f'<td>{escape(record["source_app"])}</td>'
-            f'<td>{escape(record["user_trigger"])}</td>'
+            f'data-origin="{escape(record.origin)}" data-search="{escape(search_blob)}">'
+            f'<td class="mono"><span class="chev" aria-hidden="true">\u25b8</span>{escape(record.timestamp_local)}</td>'
+            f'<td><span class="badge {badge}">{escape(record.origin)}</span></td>'
+            f'<td>{escape(record.source_app)}</td>'
+            f'<td>{escape(record.user_trigger)}</td>'
             f'<td class="preview">{escape(request_preview)}</td>'
             "</tr>"
         )
 
         detail_fields = [
-            ("Timestamp (UTC)", record["timestamp_utc"]),
-            ("Use case", record["use_case"]),
-            ("Model", record["model"]),
+            ("Timestamp (UTC)", record.timestamp_utc),
+            ("Use case", record.use_case),
+            ("Model", record.model),
         ]
-        if record["model_version"]:
-            detail_fields.append(("Model version", record["model_version"]))
-        detail_fields.append(("Record type", record["record_type"]))
-        if record["event_id"]:
-            detail_fields.append(("Event ID", record["event_id"]))
-        if record["detail"]:
-            detail_fields.append(("PCC detail", record["detail"]))
+        if record.model_version:
+            detail_fields.append(("Model version", record.model_version))
+        detail_fields.append(("Record type", record.record_type))
+        if record.event_id:
+            detail_fields.append(("Event ID", record.event_id))
+        if record.detail:
+            detail_fields.append(("PCC detail", record.detail))
         meta_html = "".join(
             f'<div><span class="k">{escape(label)}</span>'
             f'<span class="v mono">{escape(as_text(value)) or "&mdash;"}</span></div>'
@@ -706,9 +763,9 @@ def render_rows(records):
             f'      <tr class="detail-row" id="{detail_id}" hidden><td colspan="5">'
             f'<div class="detail-meta">{meta_html}</div>'
             '<div class="detail-block"><span class="k">Full request</span>'
-            f'<pre>{escape(record["request"]) or "(empty)"}</pre></div>'
+            f'<pre>{escape(record.request) or "(empty)"}</pre></div>'
             '<div class="detail-block"><span class="k">Full response</span>'
-            f'<pre>{escape(record["response"]) or "(empty)"}</pre></div>'
+            f'<pre>{escape(record.response) or "(empty)"}</pre></div>'
             "</td></tr>"
         )
 

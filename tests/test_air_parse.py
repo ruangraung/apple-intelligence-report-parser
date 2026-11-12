@@ -18,6 +18,7 @@ import sys
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
+from dataclasses import replace
 from datetime import datetime, timezone
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -497,6 +498,22 @@ class TestPCCBranch(unittest.TestCase):
         self.assertIn("modelRequests is not a list; skipped", payload["summary"]["warnings"])
         self.assertIn("privateCloudComputeRequests is not a list; skipped", payload["summary"]["warnings"])
 
+    def test_redaction_leaves_the_pipeline_metadata_alone(self):
+        """--redact covers user text. A pipeline kind and an adapter name are not that."""
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "out")
+            code, output = run_cli(
+                [str(self.MIXED), "--out", out, "--formats", "json", "--tz", "utc", "--redact"]
+            )
+            self.assertEqual(code, 0, output)
+            payload = json.loads(
+                pathlib.Path(out, "mixed_input_parsed.json").read_text(encoding="utf-8")
+            )
+        pcc = next(r for r in payload["records"] if r["record_type"] == "PCC_Request")
+        model = next(r for r in payload["records"] if r["record_type"] == "Model_Request")
+        self.assertEqual(pcc["request"], "pipeline: mixed-pipeline")
+        self.assertTrue(model["request"].startswith("[redacted chars="))
+
 
 class TestDemoGoldenRun(unittest.TestCase):
     """--demo is the path a first-time user takes, so its output is pinned too."""
@@ -615,6 +632,69 @@ class TestHtmlSnapshot(unittest.TestCase):
         changed = [line for line in second_lines if line not in first_lines]
         self.assertEqual(len(changed), 1, f"more than the stamp moved: {changed}")
         self.assertIn(b"Generated 2030-12-31 23:59:59", changed[0])
+
+
+class TestRecord(unittest.TestCase):
+    """The row shape, and the single place where the text policies live."""
+
+    def _record(self, **overrides):
+        base = air_parse.Record(
+            timestamp=1735689600.0,
+            timestamp_utc="2025-01-01 00:00:00",
+            timestamp_local="2025-01-01 07:00:00",
+            event_id="abc",
+            origin="OnDevice",
+            execution_environment_raw="OnDevice",
+            user_trigger="Summarise",
+            use_case="com.apple.SummarizationKit.mailMessage.synopsis",
+            source_app="Mail",
+            request="hello",
+            response="world",
+            model="com.apple.fm.language.instruct_on_device_v1",
+            model_version="1.0",
+            record_type="Model_Request",
+            detail="",
+        )
+        return replace(base, **overrides) if overrides else base
+
+    def test_parse_report_returns_records(self):
+        data = air_parse.load_report(str(FIXTURE))
+        tz, _label = air_parse.resolve_timezone("utc")
+        records, _summary = air_parse.parse_report(data, tz, 2000, False)
+        self.assertTrue(all(isinstance(record, air_parse.Record) for record in records))
+
+    def test_the_json_keys_keep_the_order_writers_relied_on(self):
+        self.assertEqual(
+            list(self._record().to_json_dict()),
+            [
+                "timestamp", "timestamp_utc", "timestamp_local", "event_id", "origin",
+                "execution_environment_raw", "user_trigger", "use_case", "source_app",
+                "request", "response", "model", "model_version", "record_type", "detail",
+            ],
+        )
+
+    def test_present_with_no_policies_returns_the_same_text(self):
+        record = self._record()
+        self.assertEqual(record.presented(0, False), record)
+
+    def test_present_clamps_the_request_and_the_response(self):
+        record = self._record(request="hello", response="world")
+        presented = record.presented(4, False)
+        self.assertEqual(presented.request, "hell... [+1 chars]")
+        self.assertEqual(presented.response, "worl... [+1 chars]")
+        self.assertEqual(presented.event_id, record.event_id, "only the two text fields move")
+
+    def test_present_redacts_before_it_clamps(self):
+        record = self._record(request="secret prompt", response="secret answer")
+        presented = record.presented(0, True)
+        self.assertRegex(presented.request, r"^\[redacted chars=13 sha256=[0-9a-f]{12}\]$")
+        self.assertRegex(presented.response, r"^\[redacted chars=13 sha256=[0-9a-f]{12}\]$")
+        self.assertNotIn("secret", presented.request + presented.response)
+
+    def test_a_tight_limit_wins_even_over_the_redaction_marker(self):
+        """Redaction runs first, so a small --max-content truncates the marker itself."""
+        presented = self._record(request="secret prompt").presented(5, True)
+        self.assertEqual(presented.request, "[reda... [+34 chars]")
 
 
 class TestHtmlRenderers(unittest.TestCase):
@@ -753,7 +833,7 @@ class TestSecurityContract(unittest.TestCase):
         source = AIR_PARSE_PATH.read_text(encoding="utf-8")
         allowed = {
             "__future__", "argparse", "csv", "hashlib", "html", "json", "os", "re",
-            "sys", "collections", "datetime", "zoneinfo", "string",
+            "sys", "collections", "datetime", "zoneinfo", "string", "dataclasses",
         }
         for line in source.splitlines():
             stripped = line.strip()
