@@ -1247,46 +1247,60 @@ def synthetic_report():
     }
 
 
+class InputError(Exception):
+    """The report or the arguments cannot be used. Exit code 1."""
+
+
+class OutputExists(Exception):
+    """A target file is already there and --force was not given. Exit code 2."""
+
+
+class RefusedLocation(Exception):
+    """Writing there would land in an OS path, or overwrite the input. Exit code 3."""
+
+
+EXIT_CODES = (
+    (InputError, 1),
+    (OutputExists, 2),
+    (RefusedLocation, 3),
+)
+
+
 def check_output_paths(input_path, out_dir, targets, force):
     resolved_out = os.path.realpath(out_dir)
     for prefix in BLOCKED_OUTPUT_PREFIXES:
         if resolved_out == prefix or resolved_out.startswith(prefix + os.sep):
-            print(f"refusing to write into {resolved_out}: this looks like an operating system location")
-            sys.exit(3)
+            raise RefusedLocation(
+                f"refusing to write into {resolved_out}: this looks like an operating system location"
+            )
     if os.path.exists(resolved_out) and not os.path.isdir(resolved_out):
-        print(f"refusing to write into {resolved_out}: not a directory")
-        sys.exit(3)
+        raise RefusedLocation(f"refusing to write into {resolved_out}: not a directory")
 
     resolved_input = os.path.realpath(input_path)
     for target in targets:
         if os.path.realpath(target) == resolved_input:
-            print(f"refusing to overwrite the input report ({target})")
-            sys.exit(3)
+            raise RefusedLocation(f"refusing to overwrite the input report ({target})")
         if os.path.exists(target) and not force:
-            print(f"{target} already exists; pass --force to overwrite")
-            sys.exit(2)
+            raise OutputExists(f"{target} already exists; pass --force to overwrite")
 
 
 def load_report(path):
     if not os.path.isfile(path):
-        print(f"input error: {path} is not a regular file")
-        sys.exit(1)
+        raise InputError(f"input error: {path} is not a regular file")
     size = os.path.getsize(path)
     if size > MAX_INPUT_BYTES:
-        print(f"input error: {path} is {size / 1048576:.0f} MB, above the 512 MB limit")
-        sys.exit(1)
+        raise InputError(f"input error: {path} is {size / 1048576:.0f} MB, above the 512 MB limit")
     try:
         with open(path, "r", encoding="utf-8") as handle:
             return json.load(handle)
     except UnicodeDecodeError:
-        print("input error: the file is not UTF-8 text; is this really an AIR JSON export?")
-        sys.exit(1)
+        raise InputError(
+            "input error: the file is not UTF-8 text; is this really an AIR JSON export?"
+        )
     except json.JSONDecodeError as exc:
-        print(f"input error: invalid JSON at line {exc.lineno}, column {exc.colno} ({exc.msg})")
-        sys.exit(1)
+        raise InputError(f"input error: invalid JSON at line {exc.lineno}, column {exc.colno} ({exc.msg})")
     except OSError as exc:
-        print(f"input error: {exc}")
-        sys.exit(1)
+        raise InputError(f"input error: {exc}")
 
 
 def build_parser():
@@ -1320,34 +1334,39 @@ def build_parser():
 
 
 def main(argv=None):
+    """Turn a typed failure into its documented exit code. Nothing else picks a code."""
     args = build_parser().parse_args(argv)
+    try:
+        return run(args)
+    except (InputError, OutputExists, RefusedLocation) as exc:
+        print(exc)
+        return next(code for kind, code in EXIT_CODES if isinstance(exc, kind))
+
+
+def run(args):
     # A negative limit slices from the end and reports a nonsense remainder, so it
     # is rejected rather than reinterpreted: 0 already means "no limit".
     if args.max_content < 0:
-        print("input error: --max-content must be 0 or more; 0 means no limit")
-        sys.exit(1)
+        raise InputError("input error: --max-content must be 0 or more; 0 means no limit")
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     formats = [f.strip().lower() for f in args.formats.split(",") if f.strip()]
     unknown = [f for f in formats if f not in ("csv", "html", "txt", "md", "json")]
     if unknown:
-        print(f"input error: unknown format(s): {', '.join(unknown)}")
-        sys.exit(1)
+        raise InputError(f"input error: unknown format(s): {', '.join(unknown)}")
 
     if args.demo:
         out_dir = args.out
         input_path = os.path.join(out_dir, "demo_report.json")
     else:
         if not args.report:
-            print("input error: give the path to a report, or use --demo")
-            sys.exit(1)
+            raise InputError("input error: give the path to a report, or use --demo")
         input_path = args.report
         out_dir = args.out
 
     try:
         tz, tz_label = resolve_timezone(args.tz)
     except ValueError as exc:
-        print(f"input error: {exc}")
-        sys.exit(1)
+        raise InputError(f"input error: {exc}")
 
     stem = os.path.splitext(os.path.basename(input_path))[0]
     targets = {fmt: os.path.join(out_dir, f"{stem}_parsed.{fmt}") for fmt in formats}
@@ -1365,8 +1384,7 @@ def main(argv=None):
 
     data = load_report(input_path)
     if not isinstance(data, dict):
-        print("input error: the report's top level is not a JSON object")
-        sys.exit(1)
+        raise InputError("input error: the report's top level is not a JSON object")
     if not data.get("modelRequests") and not data.get("privateCloudComputeRequests"):
         print("note: this report contains no modelRequests and no privateCloudComputeRequests")
 
