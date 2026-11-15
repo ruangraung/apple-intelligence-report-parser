@@ -606,6 +606,38 @@ class TestErrorContract(unittest.TestCase):
         self.assertEqual(table, {"InputError": 1, "OutputExists": 2, "RefusedLocation": 3})
 
 
+class TestOutputSymlinkGate(unittest.TestCase):
+    """A symlink planted at a predictable output name cannot redirect a write."""
+
+    def test_a_dangling_symlink_at_a_target_name_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "out")
+            os.makedirs(out)
+            outside = pathlib.Path(tmp, "elsewhere.txt")
+            os.symlink(str(outside), os.path.join(out, "sample_input_parsed.txt"))
+            code, _ = run_cli([str(FIXTURE), "--out", out, "--formats", "txt", "--tz", "utc"])
+            self.assertEqual(code, 3)
+            self.assertFalse(outside.exists())
+
+    def test_a_live_link_to_an_outside_file_is_refused_even_with_force(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "out")
+            os.makedirs(out)
+            victim = pathlib.Path(tmp, "victim.txt")
+            victim.write_text("keep me", encoding="utf-8")
+            os.symlink(str(victim), os.path.join(out, "sample_input_parsed.txt"))
+            code, _ = run_cli([str(FIXTURE), "--out", out, "--formats", "txt", "--tz", "utc", "--force"])
+            self.assertEqual(code, 3)
+            self.assertEqual(victim.read_text(encoding="utf-8"), "keep me")
+
+    def test_a_plain_directory_still_writes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "out")
+            code, _ = run_cli([str(FIXTURE), "--out", out, "--formats", "txt", "--tz", "utc"])
+            self.assertEqual(code, 0)
+            self.assertTrue(pathlib.Path(out, "sample_input_parsed.txt").exists())
+
+
 class TestHtmlSnapshot(unittest.TestCase):
     """Pin the whole page, not substrings of the source.
 
