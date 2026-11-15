@@ -1382,7 +1382,7 @@ class OutputExists(Exception):
 
 
 class RefusedLocation(Exception):
-    """Writing there would land in an OS path, or overwrite the input. Exit code 3."""
+    """Writing there would land in an OS path, follow a link, or overwrite the input. Exit code 3."""
 
 
 EXIT_CODES = (
@@ -1404,6 +1404,10 @@ def check_output_paths(input_path, out_dir, targets, force):
 
     resolved_input = os.path.realpath(input_path)
     for target in targets:
+        if os.path.islink(target):
+            raise RefusedLocation(f"refusing to write through the symlink at {target}")
+        if os.path.commonpath((resolved_out, os.path.realpath(target))) != resolved_out:
+            raise RefusedLocation(f"refusing to write outside the output directory ({target})")
         if os.path.realpath(target) == resolved_input:
             raise RefusedLocation(f"refusing to overwrite the input report ({target})")
         if os.path.exists(target) and not force:

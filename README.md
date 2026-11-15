@@ -293,7 +293,7 @@ This tool processes data that includes your prompts and the model's responses, i
 - **No subprocess, no `eval`/`exec`, no dynamic imports.** You can read the whole implementation in `air_parse.py`.
 - **Output is as sensitive as the input.** Every file this tool writes (CSV, HTML, TXT, MD, JSON) contains your prompts and the model's replies in plain text, unless you pass `--redact`. Keep parsed output out of synced folders, chats, issue trackers, and repositories.
 - **`--redact`** replaces request/response text with a size band and a keyed digest whose random key is never stored: identical text keeps one marker within a run, but a recipient cannot confirm a guess by hashing candidate phrases, and two separately shared exports cannot be cross-correlated.
-- **Output path safety.** The tool refuses to write into operating system locations (`/usr`, `/System`, `/bin`, etc.) and refuses to overwrite existing output unless you pass `--force`.
+- **Output path safety.** The tool refuses to write into operating system locations (`/usr`, `/System`, `/bin`, etc.), refuses to write through a symlink planted at an output name, and refuses to overwrite existing output unless you pass `--force`.
 - See [NOTICE](NOTICE) for the full disclaimer.
 
 ## License
