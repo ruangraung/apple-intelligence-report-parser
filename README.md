@@ -57,7 +57,7 @@ The export is one giant minified line of JSON. Prompts are logged as escaped Swi
 The Apple Intelligence Report export is a single minified line of JSON with escaped Swift serializations and base64 attestation bundles. Reading it by hand is impractical. This tool turns it into structured, readable output in five formats, with a few things that matter:
 
 - **Correct timezone handling.** `--tz` accepts `local`, `utc`, a numeric offset, or any IANA timezone name. Timestamps are converted accurately, not assumed to be any single zone.
-- **Redaction built in.** `--redact` replaces prompt and response text with a length and SHA-256 hash, so you can share the shape of your usage (timestamps, apps, origin, counts) without exposing what you said or what came back.
+- **Redaction built in.** `--redact` replaces prompt and response text with a size band and a keyed digest under a fresh random key every run (never stored), so you can share the shape of your usage (timestamps, apps, origin, counts) without exposing what you said or what came back, and nobody can confirm a guessed phrase by hashing it.
 - **Five output formats.** CSV (with formula-injection guarding), HTML (with filtering, sorting, pagination, and expandable rows), plain text, Markdown, and JSON.
 - **Security by default.** Stdlib-only Python, zero network calls, no subprocess, no `eval`/`exec`. The tool refuses to write into OS directories and refuses to overwrite existing output unless you pass `--force`.
 
@@ -139,7 +139,7 @@ The page has a filter box, sortable headings, page navigation, and rows you can 
 |---|---|
 | The page you can filter and sort | `--formats html` |
 | All five formats | nothing, that is the default |
-| A copy that is safe to share | `--redact`, for example `--redact --out air_redacted` |
+| A copy that shares usage, not wording | `--redact`, for example `--redact --out air_redacted` |
 
 Every format in one run:
 
@@ -207,7 +207,7 @@ If the path is awkward to type, drag the file from Finder into the Terminal wind
 
 | Flag | Default | What it does |
 |---|---|---|
-| `--redact` | off | Replace request/response text with a length and SHA-256 hash, so you can share the shape of your usage without the content |
+| `--redact` | off | Replace request/response text with a size band and a keyed digest (fresh random key every run, never stored), so you can share the shape of your usage without the content |
 | `--no-csv-guard` | off | Disable CSV formula-injection neutralization (leave this on unless you have a specific reason not to) |
 
 ### Examples
@@ -292,7 +292,7 @@ This tool processes data that includes your prompts and the model's responses, i
 - **Zero network calls.** The entire tool is a single Python file using only the standard library. It reads one file you specify and writes to a directory you specify, nothing else.
 - **No subprocess, no `eval`/`exec`, no dynamic imports.** You can read the whole implementation in `air_parse.py`.
 - **Output is as sensitive as the input.** Every file this tool writes (CSV, HTML, TXT, MD, JSON) contains your prompts and the model's replies in plain text, unless you pass `--redact`. Keep parsed output out of synced folders, chats, issue trackers, and repositories.
-- **`--redact`** replaces request/response text with a length and SHA-256 hash so you can share the *shape* of your usage (timestamps, apps, origin, counts) without the content.
+- **`--redact`** replaces request/response text with a size band and a keyed digest whose random key is never stored: identical text keeps one marker within a run, but a recipient cannot confirm a guess by hashing candidate phrases, and two separately shared exports cannot be cross-correlated.
 - **Output path safety.** The tool refuses to write into operating system locations (`/usr`, `/System`, `/bin`, etc.) and refuses to overwrite existing output unless you pass `--force`.
 - See [NOTICE](NOTICE) for the full disclaimer.
 

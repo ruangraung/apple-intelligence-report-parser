@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import csv
 import hashlib
+import hmac
 import html as html_mod
 import json
 import os
@@ -264,9 +265,23 @@ def preview_text(text, limit=140):
     return first_line + ("\u2026" if truncated else "")
 
 
+_redaction_key = None
+
+
+def _redaction_band(length):
+    for limit in (10, 50, 200, 1000):
+        if length < limit:
+            return f"<{limit}"
+    return ">=1000"
+
+
 def redact_text(text):
-    digest = hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()[:12]
-    return f"[redacted chars={len(text)} sha256={digest}]"
+    """Digest user text under a per-run key that is never stored or printed."""
+    global _redaction_key
+    if _redaction_key is None:
+        _redaction_key = os.urandom(32)
+    digest = hmac.new(_redaction_key, text.encode("utf-8", "replace"), hashlib.sha256).hexdigest()[:12]
+    return f"[redacted chars{_redaction_band(len(text))} sha256={digest}]"
 
 
 def csv_guard(value, enabled):
@@ -1420,7 +1435,7 @@ def build_parser():
         default="csv,html,txt,md,json",
         help="comma-separated subset of csv,html,txt,md,json (default: all five)",
     )
-    parser.add_argument("--redact", action="store_true", help="replace request/response text with a hash and length")
+    parser.add_argument("--redact", action="store_true", help="replace request/response text with a size band and a per-run keyed digest")
     parser.add_argument(
         "--max-content",
         type=int,
