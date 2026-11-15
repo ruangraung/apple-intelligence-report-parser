@@ -886,6 +886,36 @@ class TestWriters(unittest.TestCase):
             self.assertIn("[redacted chars", text)
 
 
+class TestTxtControlBytes(unittest.TestCase):
+    """Report text cannot add lines or control bytes to the TXT output."""
+
+    def _run_with_prompt(self, prompt):
+        with tempfile.TemporaryDirectory() as tmp:
+            data = json.loads(FIXTURE.read_text(encoding="utf-8"))
+            data["modelRequests"][0]["prompt"] = prompt
+            hostile = pathlib.Path(tmp, "hostile.json")
+            hostile.write_text(json.dumps(data), encoding="utf-8")
+            out = os.path.join(tmp, "out")
+            code, _ = run_cli([str(hostile), "--out", out, "--formats", "txt", "--tz", "utc"])
+            self.assertEqual(code, 0)
+            return pathlib.Path(out, "hostile_parsed.txt").read_text(encoding="utf-8")
+
+    def test_control_bytes_are_dropped_and_line_breaks_are_named(self):
+        text = self._run_with_prompt("a\r\nb\x1b]0;pwn\x07c\nforged")
+        self.assertNotIn("\x1b", text)
+        self.assertNotIn("\x07", text)
+        self.assertIn("Request      : a\\nb]0;pwnc\\nforged", text)
+
+    def test_an_embedded_break_stays_inside_its_field(self):
+        text = self._run_with_prompt("first\nforged line")
+        self.assertIn("first\\nforged line", text)
+        self.assertNotIn("\nforged", text)
+
+    def test_tab_survives_inside_a_field(self):
+        text = self._run_with_prompt("col1\tcol2")
+        self.assertIn("col1\tcol2", text)
+
+
 class TestSecurityContract(unittest.TestCase):
     """The tool's headline promise: stdlib only, no network, no code execution."""
 

@@ -591,6 +591,17 @@ def write_json(records, summary, path, source_name, tz_label, generated):
         handle.write("\n")
 
 
+_TXT_STRAY_CONTROLS = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\x80-\x9f]")
+
+
+def txt_field(text):
+    """Keep the TXT layout one field per line: drop control bytes, name line breaks."""
+    if not text:
+        return text
+    parts = _TXT_STRAY_CONTROLS.sub("", text).splitlines()
+    return "\\n".join(parts)
+
+
 def write_txt(records, summary, path, source_name, tz_label, generated):
     def rule(char="-"):
         return char * 78
@@ -620,36 +631,36 @@ def write_txt(records, summary, path, source_name, tz_label, generated):
         lines.append(rule())
         lines.append(f"[{record.timestamp_utc} UTC | {record.timestamp_local} local] "
                      f"{record.record_type} | {record.origin}")
-        lines.append(f"  Event ID     : {record.event_id}")
-        lines.append(f"  User trigger : {record.user_trigger}")
-        lines.append(f"  Use case     : {record.use_case}")
-        lines.append(f"  Source app   : {record.source_app}")
-        lines.append(f"  Model        : {record.model} {record.model_version}".rstrip())
+        lines.append(f"  Event ID     : {txt_field(record.event_id)}")
+        lines.append(f"  User trigger : {txt_field(record.user_trigger)}")
+        lines.append(f"  Use case     : {txt_field(record.use_case)}")
+        lines.append(f"  Source app   : {txt_field(record.source_app)}")
+        lines.append(f"  Model        : {txt_field(record.model)} {txt_field(record.model_version)}".rstrip())
         if record.request:
-            lines.append(f"  Request      : {record.request}")
+            lines.append(f"  Request      : {txt_field(record.request)}")
         if record.response:
-            lines.append(f"  Response     : {record.response}")
+            lines.append(f"  Response     : {txt_field(record.response)}")
         if record.detail:
-            lines.append(f"  PCC detail   : {record.detail}")
+            lines.append(f"  PCC detail   : {txt_field(record.detail)}")
         lines.append("")
 
     lines.append(rule("="))
     lines.append("Counts by user trigger (model requests)")
     for label, count in tally(records, "user_trigger", record_type="Model_Request"):
-        lines.append(f"  {count:4d}  {label}")
+        lines.append(f"  {count:4d}  {txt_field(label)}")
     lines.append("")
     lines.append("Counts by source app (model requests)")
     for label, count in tally(records, "source_app", record_type="Model_Request", skip_empty=True):
-        lines.append(f"  {count:4d}  {label}")
+        lines.append(f"  {count:4d}  {txt_field(label)}")
     lines.append("")
     lines.append("Counts by model")
     for label, count in tally(records, "model", skip_empty=True):
-        lines.append(f"  {count:4d}  {label}")
+        lines.append(f"  {count:4d}  {txt_field(label)}")
     if summary["warnings"]:
         lines.append("")
         lines.append("Warnings")
         for warning in summary["warnings"]:
-            lines.append(f"  {warning}")
+            lines.append(f"  {txt_field(warning)}")
     lines.append("")
 
     with open(path, "w", encoding="utf-8") as handle:
