@@ -524,7 +524,7 @@ class TestPCCBranch(unittest.TestCase):
         pcc = next(r for r in payload["records"] if r["record_type"] == "PCC_Request")
         model = next(r for r in payload["records"] if r["record_type"] == "Model_Request")
         self.assertEqual(pcc["request"], "pipeline: mixed-pipeline")
-        self.assertTrue(model["request"].startswith("[redacted chars="))
+        self.assertTrue(model["request"].startswith("[redacted chars"))
 
 
 class TestDemoGoldenRun(unittest.TestCase):
@@ -699,14 +699,27 @@ class TestRecord(unittest.TestCase):
     def test_present_redacts_before_it_clamps(self):
         record = self._record(request="secret prompt", response="secret answer")
         presented = record.presented(0, True)
-        self.assertRegex(presented.request, r"^\[redacted chars=13 sha256=[0-9a-f]{12}\]$")
-        self.assertRegex(presented.response, r"^\[redacted chars=13 sha256=[0-9a-f]{12}\]$")
+        self.assertRegex(presented.request, r"^\[redacted chars<50 sha256=[0-9a-f]{12}\]$")
+        self.assertRegex(presented.response, r"^\[redacted chars<50 sha256=[0-9a-f]{12}\]$")
         self.assertNotIn("secret", presented.request + presented.response)
 
     def test_a_tight_limit_wins_even_over_the_redaction_marker(self):
         """Redaction runs first, so a small --max-content truncates the marker itself."""
         presented = self._record(request="secret prompt").presented(5, True)
         self.assertEqual(presented.request, "[reda... [+34 chars]")
+
+    def test_redaction_digest_changes_between_runs(self):
+        """The digest key is generated per run and never stored, so a marker from one run cannot confirm guesses made against another."""
+        first = air_parse.redact_text("short prompt")
+        air_parse._redaction_key = None
+        second = air_parse.redact_text("short prompt")
+        self.assertNotEqual(first, second)
+        self.assertEqual(air_parse.redact_text("short prompt"), second)
+
+    def test_redaction_marker_shows_a_size_band_not_the_exact_length(self):
+        marker = air_parse.redact_text("x" * 13)
+        self.assertIn("chars<50", marker)
+        self.assertNotIn("chars=13", marker)
 
 
 class TestTally(unittest.TestCase):
@@ -870,7 +883,7 @@ class TestWriters(unittest.TestCase):
             self.assertEqual(code, 0)
             text = pathlib.Path(out, "sample_input_parsed.json").read_text(encoding="utf-8")
             self.assertNotIn("PLAINTEXT_PROMPT_MARKER", text)
-            self.assertIn("[redacted chars=", text)
+            self.assertIn("[redacted chars", text)
 
 
 class TestSecurityContract(unittest.TestCase):
@@ -898,7 +911,7 @@ class TestSecurityContract(unittest.TestCase):
     def test_only_stdlib_modules_are_imported(self):
         source = AIR_PARSE_PATH.read_text(encoding="utf-8")
         allowed = {
-            "__future__", "argparse", "csv", "hashlib", "html", "json", "os", "re",
+            "__future__", "argparse", "csv", "hashlib", "hmac", "html", "json", "os", "re",
             "sys", "collections", "datetime", "zoneinfo", "string", "dataclasses",
         }
         for line in source.splitlines():
