@@ -1086,5 +1086,65 @@ class TestMarkdownEscaping(unittest.TestCase):
         self.assertNotIn("\\|", text)
 
 
+class TestRedactTriggerFallback(unittest.TestCase):
+    """Under --redact the trigger column never carries prompt text."""
+
+    MARKER = "ZZPROMPTLEAKZZ never to be shared"
+
+    def _write_hostile(self, tmp):
+        data = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        data["modelRequests"][0]["prompt"] = self.MARKER
+        data["modelRequests"][0]["useCase"] = ""
+        hostile = pathlib.Path(tmp, "hostile.json")
+        hostile.write_text(json.dumps(data), encoding="utf-8")
+        return str(hostile)
+
+    def test_prompt_text_is_absent_from_every_output_under_redact(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            hostile = self._write_hostile(tmp)
+            out = os.path.join(tmp, "out")
+            code, output = run_cli(
+                [hostile, "--out", out, "--formats", "csv,html,txt,md,json", "--tz", "utc", "--redact"]
+            )
+            self.assertEqual(code, 0, output)
+            for fmt in ("csv", "html", "txt", "md", "json"):
+                text = pathlib.Path(out, f"hostile_parsed.{fmt}").read_text(encoding="utf-8")
+                self.assertNotIn(self.MARKER, text, f"prompt text leaked into the {fmt} output")
+
+    def test_the_fallback_label_is_the_model_id_under_redact(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            hostile = self._write_hostile(tmp)
+            out = os.path.join(tmp, "out")
+            code, _ = run_cli([hostile, "--out", out, "--formats", "md", "--tz", "utc", "--redact"])
+            self.assertEqual(code, 0)
+            text = pathlib.Path(out, "hostile_parsed.md").read_text(encoding="utf-8")
+        self.assertIn("| ON-DEVICE | test-model", text)
+
+    def test_user_trigger_skips_the_prompt_fallback_under_redact(self):
+        self.assertEqual(
+            air_parse.user_trigger("", "leaky prompt words", "model-id", redact=True), "model-id"
+        )
+        self.assertEqual(
+            air_parse.user_trigger("", "leaky prompt words", "model-id"), "leaky prompt words"
+        )
+
+    def test_without_redact_the_raw_prompt_fallback_stays(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            hostile = self._write_hostile(tmp)
+            out = os.path.join(tmp, "out")
+            code, _ = run_cli([hostile, "--out", out, "--formats", "md", "--tz", "utc"])
+            self.assertEqual(code, 0)
+            text = pathlib.Path(out, "hostile_parsed.md").read_text(encoding="utf-8")
+        self.assertIn(self.MARKER, text)
+
+    def test_a_populated_use_case_still_labels_normally_under_redact(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "out")
+            code, _ = run_cli([str(FIXTURE), "--out", out, "--formats", "md", "--tz", "utc", "--redact"])
+            self.assertEqual(code, 0)
+            text = pathlib.Path(out, "sample_input_parsed.md").read_text(encoding="utf-8")
+        self.assertIn("| 1 | Summarize |", text)
+
+
 if __name__ == "__main__":
     unittest.main()
