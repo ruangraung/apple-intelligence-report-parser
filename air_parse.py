@@ -303,13 +303,18 @@ def classify_origin(raw):
     return "Unknown"
 
 
-def user_trigger(*candidates):
+def user_trigger(use_case, prompt, model=None, redact=False):
     """Map a use case to a friendly label.
 
     Identifiers arrive in mixed case (com.apple.SummarizationKit.mailMessage.synopsis)
     while the table holds both camelCase and snake_case keys, so both sides are
     folded to lower case before the substring test.
+
+    The final fallback returns report text as the label; under redact the
+    prompt is not eligible for that, because the label column is meant to
+    stay shareable, so the fallback runs without it.
     """
+    candidates = (use_case, prompt, model)
     for candidate in candidates:
         text = as_text(candidate).lower()
         for key, label in USE_CASE_TRIGGERS.items():
@@ -328,7 +333,7 @@ def user_trigger(*candidates):
             for key, label in USE_CASE_TRIGGERS.items():
                 if key.lower() in template_id:
                     return label
-    for candidate in candidates:
+    for candidate in ((use_case, model) if redact else candidates):
         text = as_text(candidate)
         if text:
             return text
@@ -467,7 +472,7 @@ def parse_report(data, tz, max_content, redact):
             origin=classify_origin(as_text(entry.get("executionEnvironment"))),
             execution_environment_raw=as_text(entry.get("executionEnvironment")),
             user_trigger=user_trigger(
-                entry.get("useCase"), entry.get("prompt"), entry.get("model")
+                entry.get("useCase"), entry.get("prompt"), entry.get("model"), redact=redact
             ),
             use_case=as_text(entry.get("useCase")),
             source_app=source_app(entry.get("clientIdentifier"), entry.get("useCase")),
