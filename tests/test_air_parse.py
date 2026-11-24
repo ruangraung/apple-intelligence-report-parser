@@ -1044,5 +1044,47 @@ class TestSecurityContract(unittest.TestCase):
             self.assertIn(name, allowed, f"non-stdlib import: {name}")
 
 
+class TestMarkdownEscaping(unittest.TestCase):
+    """Report text cannot inject markup or forge structure in the MD output."""
+
+    def _run_with_prompt(self, prompt, use_case=None):
+        with tempfile.TemporaryDirectory() as tmp:
+            data = json.loads(FIXTURE.read_text(encoding="utf-8"))
+            data["modelRequests"][0]["prompt"] = prompt
+            if use_case is not None:
+                data["modelRequests"][0]["useCase"] = use_case
+            hostile = pathlib.Path(tmp, "hostile.json")
+            hostile.write_text(json.dumps(data), encoding="utf-8")
+            out = os.path.join(tmp, "out")
+            code, _ = run_cli([str(hostile), "--out", out, "--formats", "md", "--tz", "utc"])
+            self.assertEqual(code, 0)
+            return pathlib.Path(out, "hostile_parsed.md").read_text(encoding="utf-8")
+
+    def test_html_in_report_text_is_entity_encoded(self):
+        text = self._run_with_prompt("<img src=x onerror=alert(1)>")
+        self.assertIn("&lt;img src=x onerror=alert(1)&gt;", text)
+        self.assertNotIn("<img", text)
+
+    def test_a_pipe_in_a_tally_label_stays_one_table_cell(self):
+        text = self._run_with_prompt("plain request text", use_case="com.apple.Bran|dNew|Thing")
+        self.assertIn("| 1 | com.apple.Bran\\|dNew\\|Thing |", text)
+
+    def test_a_line_break_in_report_text_stays_inside_its_field(self):
+        text = self._run_with_prompt("first line\nforged line")
+        self.assertIn("- **Request:** first line\\nforged line", text)
+        self.assertNotIn("\nforged line", text)
+
+    def test_clean_demo_text_is_not_altered(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "out")
+            code, _ = run_cli(["--demo", "--out", out, "--formats", "md", "--tz", "utc", "--force"])
+            self.assertEqual(code, 0)
+            text = pathlib.Path(out, "demo_report_parsed.md").read_text(encoding="utf-8")
+        self.assertIn("What is the airspeed velocity of an unladen swallow?", text)
+        self.assertNotIn("&lt;", text)
+        self.assertNotIn("&amp;", text)
+        self.assertNotIn("\\|", text)
+
+
 if __name__ == "__main__":
     unittest.main()
