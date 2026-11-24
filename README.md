@@ -57,7 +57,7 @@ The export is one giant minified line of JSON. Prompts are logged as escaped Swi
 The Apple Intelligence Report export is a single minified line of JSON with escaped Swift serializations and base64 attestation bundles. Reading it by hand is impractical. This tool turns it into structured, readable output in five formats, with a few things that matter:
 
 - **Correct timezone handling.** `--tz` accepts `local`, `utc`, a numeric offset, or any IANA timezone name. Timestamps are converted accurately, not assumed to be any single zone.
-- **Redaction built in.** `--redact` replaces prompt and response text with a size band and a keyed digest under a fresh random key every run (never stored), so you can share the shape of your usage (timestamps, apps, origin, counts) without exposing what you said or what came back, and nobody can confirm a guessed phrase by hashing it.
+- **Redaction built in.** `--redact` replaces prompt and response text with a size band and a keyed digest under a fresh random key every run (never stored), so you can share the shape of your usage (timestamps, apps, origin, counts) without exposing what you said or what came back, and nobody can confirm a guessed phrase by hashing it. The trigger column never falls back to prompt text under `--redact`.
 - **Five output formats.** CSV (with formula-injection guarding), HTML (with filtering, sorting, pagination, and expandable rows), plain text, Markdown, and JSON.
 - **Security by default.** Stdlib-only Python, zero network calls, no subprocess, no `eval`/`exec`. The tool refuses to write into OS directories and refuses to overwrite existing output unless you pass `--force`.
 
@@ -74,7 +74,7 @@ What has actually been tested, kept in one place so the claims below cannot drif
 | Real export parsed | macOS **27.0.x**, the version the schema was first verified against |
 | Re-checked on macOS 27.2.1 | **not yet** |
 | Python versions with a green suite | **3.9 to 3.15**, in CI on every push |
-| Test suite | **70 tests**, three of them golden files |
+| Test suite | **92 tests**, three of them golden files |
 
 See [Known limitations](#known-limitations) if you are on a macOS version other than the one above.
 
@@ -253,7 +253,7 @@ The HTML page carries its own CSS and JavaScript, so you can open it offline and
 
     python3 -m unittest discover -s tests
 
-Stdlib `unittest`, like the tool itself. **70 tests** covering label matching and template extraction, all five writers, the private cloud branch with its attestation note and warning path, the exit-code contract, and a check that nothing outside the standard library is imported.
+Stdlib `unittest`, like the tool itself. **92 tests** covering label matching and template extraction, all five writers, the private cloud branch with its attestation note and warning path, the exit-code contract, and a check that nothing outside the standard library is imported.
 
 Three files in `tests/golden/` compare output byte for byte: a CSV, the `--demo` CSV, and the whole HTML page. Changing output on purpose means regenerating them and reading the diff. Changing it by accident is exactly what they catch.
 
