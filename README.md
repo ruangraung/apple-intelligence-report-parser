@@ -244,7 +244,7 @@ The HTML page carries its own CSS and JavaScript, so you can open it offline and
 | Format | What it is |
 |---|---|
 | HTML | Self-contained page (no CDN, no external CSS/JS) with filter, sort, pagination, expandable rows, dark mode, and an origin breakdown bar |
-| MD | Markdown with a metadata table, per-request headings, and summary counts. Reads cleanly in Obsidian and similar tools |
+| MD | Markdown with a metadata table, per-request headings, and summary counts, with report text escaped so a crafted report cannot inject markup. Reads cleanly in Obsidian and similar tools |
 | TXT | Plain text summary with per-request detail and count tables |
 | CSV | Spreadsheet-ready, with a formula-injection guard on by default |
 | JSON | Machine-readable: source, timestamps, summary counters, warnings, and one object per request with fifteen named fields (`timestamp`, `origin`, `user_trigger`, `use_case`, `source_app`, `request`, `response`, `model`, `record_type`, `detail`, and so on) |

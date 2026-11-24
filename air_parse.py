@@ -667,6 +667,20 @@ def write_txt(records, summary, path, source_name, tz_label, generated):
         handle.write("\n".join(lines))
 
 
+def md_field(text):
+    """Neutralise report text for Markdown: drop control bytes, name line
+    breaks, and escape HTML metacharacters."""
+    if not text:
+        return text
+    parts = _TXT_STRAY_CONTROLS.sub("", text).splitlines()
+    return "\\n".join(html_mod.escape(part, quote=False) for part in parts)
+
+
+def md_cell(text):
+    """A table cell is pipe-delimited, so a pipe in the text must not split it."""
+    return md_field(text).replace("|", "\\|")
+
+
 def write_md(records, summary, path, source_name, tz_label, generated):
     lines = [
         "# Apple Intelligence Report, parsed",
@@ -697,19 +711,19 @@ def write_md(records, summary, path, source_name, tz_label, generated):
             "PrivateCloudCompute": "CLOUD",
             "Unknown": "UNKNOWN",
         }.get(record.origin, "UNKNOWN")
-        lines.append(f"### {record.timestamp_local} | {origin_badge} | {record.user_trigger}")
+        lines.append(f"### {record.timestamp_local} | {origin_badge} | {md_field(record.user_trigger)}")
         lines.append("")
         lines.append(f"- **Origin:** {record.origin}")
-        lines.append(f"- **Source app:** {record.source_app or 'n/a'}")
-        lines.append(f"- **Use case:** {record.use_case or 'n/a'}")
-        lines.append(f"- **Model:** {record.model or 'n/a'}")
+        lines.append(f"- **Source app:** {md_field(record.source_app or 'n/a')}")
+        lines.append(f"- **Use case:** {md_field(record.use_case or 'n/a')}")
+        lines.append(f"- **Model:** {md_field(record.model or 'n/a')}")
         lines.append(f"- **Record type:** {record.record_type}")
         if record.request:
-            lines.append(f"- **Request:** {record.request}")
+            lines.append(f"- **Request:** {md_field(record.request)}")
         if record.response:
-            lines.append(f"- **Response:** {record.response}")
+            lines.append(f"- **Response:** {md_field(record.response)}")
         if record.detail:
-            lines.append(f"- **PCC detail:** {record.detail}")
+            lines.append(f"- **PCC detail:** {md_field(record.detail)}")
         lines.append("")
 
     lines.append("## Summary counts")
@@ -719,21 +733,21 @@ def write_md(records, summary, path, source_name, tz_label, generated):
     lines.append("| Count | Trigger |")
     lines.append("|---|---|")
     for label, count in tally(records, "user_trigger", record_type="Model_Request"):
-        lines.append(f"| {count} | {label} |")
+        lines.append(f"| {count} | {md_cell(label)} |")
     lines.append("")
     lines.append("### By source app (model requests)")
     lines.append("")
     lines.append("| Count | App |")
     lines.append("|---|---|")
     for label, count in tally(records, "source_app", record_type="Model_Request", skip_empty=True):
-        lines.append(f"| {count} | {label} |")
+        lines.append(f"| {count} | {md_cell(label)} |")
     lines.append("")
     lines.append("### By model")
     lines.append("")
     lines.append("| Count | Model |")
     lines.append("|---|---|")
     for label, count in tally(records, "model", skip_empty=True):
-        lines.append(f"| {count} | {label} |")
+        lines.append(f"| {count} | {md_cell(label)} |")
     lines.append("")
 
     with open(path, "w", encoding="utf-8") as handle:
