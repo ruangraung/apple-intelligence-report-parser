@@ -1392,7 +1392,7 @@ EXIT_CODES = (
 )
 
 
-def check_output_paths(input_path, out_dir, targets, force):
+def check_output_paths(input_path, out_dir, targets, force, fixture=None):
     resolved_out = os.path.realpath(out_dir)
     for prefix in BLOCKED_OUTPUT_PREFIXES:
         if resolved_out == prefix or resolved_out.startswith(prefix + os.sep):
@@ -1412,6 +1412,16 @@ def check_output_paths(input_path, out_dir, targets, force):
             raise RefusedLocation(f"refusing to overwrite the input report ({target})")
         if os.path.exists(target) and not force:
             raise OutputExists(f"{target} already exists; pass --force to overwrite")
+
+    if fixture is not None:
+        # The demo fixture is both written and read back, so the input-overwrite
+        # rule cannot apply to it; the other three checks do.
+        if os.path.islink(fixture):
+            raise RefusedLocation(f"refusing to write through the symlink at {fixture}")
+        if os.path.commonpath((resolved_out, os.path.realpath(fixture))) != resolved_out:
+            raise RefusedLocation(f"refusing to write outside the output directory ({fixture})")
+        if os.path.exists(fixture) and not force:
+            raise OutputExists(f"{fixture} already exists; pass --force to overwrite")
 
 
 def load_report(path):
@@ -1500,7 +1510,10 @@ def run(args):
 
     stem = os.path.splitext(os.path.basename(input_path))[0]
     targets = {fmt: os.path.join(out_dir, f"{stem}_parsed.{fmt}") for fmt in formats}
-    check_output_paths(input_path, out_dir, list(targets.values()), args.force)
+    check_output_paths(
+        input_path, out_dir, list(targets.values()), args.force,
+        fixture=input_path if args.demo else None,
+    )
 
     # Every writer opens its target file directly, so the directory has to exist
     # before any of them runs. --demo happened to be the only path that created it.
