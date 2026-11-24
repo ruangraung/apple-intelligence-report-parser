@@ -638,6 +638,63 @@ class TestOutputSymlinkGate(unittest.TestCase):
             self.assertTrue(pathlib.Path(out, "sample_input_parsed.txt").exists())
 
 
+class TestDemoFixtureGate(unittest.TestCase):
+    """The --demo fixture write passes through the same gate as the outputs."""
+
+    def test_a_dangling_symlink_at_the_demo_fixture_name_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "out")
+            os.makedirs(out)
+            outside = pathlib.Path(tmp, "elsewhere.json")
+            os.symlink(str(outside), os.path.join(out, "demo_report.json"))
+            code, _ = run_cli(["--demo", "--out", out, "--formats", "csv", "--tz", "utc"])
+            self.assertEqual(code, 3)
+            self.assertFalse(outside.exists())
+
+    def test_a_live_link_to_an_outside_file_is_refused_even_with_force(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "out")
+            os.makedirs(out)
+            victim = pathlib.Path(tmp, "victim.json")
+            victim.write_text("keep me", encoding="utf-8")
+            os.symlink(str(victim), os.path.join(out, "demo_report.json"))
+            code, _ = run_cli(
+                ["--demo", "--out", out, "--formats", "csv", "--tz", "utc", "--force"]
+            )
+            self.assertEqual(code, 3)
+            self.assertEqual(victim.read_text(encoding="utf-8"), "keep me")
+
+    def test_an_existing_demo_fixture_refuses_without_force(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "out")
+            os.makedirs(out)
+            fixture = pathlib.Path(out, "demo_report.json")
+            fixture.write_text("previous demo", encoding="utf-8")
+            code, output = run_cli(["--demo", "--out", out, "--formats", "csv", "--tz", "utc"])
+            self.assertEqual(code, 2, output)
+            self.assertEqual(fixture.read_text(encoding="utf-8"), "previous demo")
+
+    def test_force_overwrites_an_existing_demo_fixture(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "out")
+            os.makedirs(out)
+            fixture = pathlib.Path(out, "demo_report.json")
+            fixture.write_text("previous demo", encoding="utf-8")
+            code, output = run_cli(
+                ["--demo", "--out", out, "--formats", "csv", "--tz", "utc", "--force"]
+            )
+            self.assertEqual(code, 0, output)
+            self.assertTrue(fixture.read_text(encoding="utf-8").startswith("{"))
+
+    def test_a_fresh_directory_still_writes_the_demo_fixture(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "out")
+            code, output = run_cli(["--demo", "--out", out, "--formats", "csv", "--tz", "utc"])
+            self.assertEqual(code, 0, output)
+            self.assertTrue(pathlib.Path(out, "demo_report.json").is_file())
+            self.assertTrue(pathlib.Path(out, "demo_report_parsed.csv").is_file())
+
+
 class TestHtmlSnapshot(unittest.TestCase):
     """Pin the whole page, not substrings of the source.
 
